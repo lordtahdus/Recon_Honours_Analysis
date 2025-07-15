@@ -17,10 +17,10 @@ library(ReconCov)
 
 # groups <- c(2,2)
 # groups <- c(4,4,4,4)
-groups <- c(6,6,6,6,6,6)
-# groups <- c(50,50)
+# groups <- c(6,6,6,6,6,6)
+groups <- c(50,50)
 
-T <- 54
+T <- 104
 h <- 4
 Tsplit <- T - h
 
@@ -29,18 +29,18 @@ Tsplit <- T - h
 #   as.list(seq(1,length(groups))),
 #   list(c(1,2))
 # )
-structure <- list(
-  groups,
-  as.list(seq(1,length(groups))),
-  list(c(1,2,3,4))
-)
-structure <- list(
-  groups,
-  as.list(seq(1,length(groups))),
-  # list(c(1,2,3), c(4,5,6)),
-  # list(c(1,2))
-  list(1:6)
-)
+# structure <- list(
+#   groups,
+#   as.list(seq(1,length(groups))),
+#   list(c(1,2,3,4))
+# )
+# structure <- list(
+#   groups,
+#   as.list(seq(1,length(groups))),
+#   # list(c(1,2,3), c(4,5,6)),
+#   # list(c(1,2))
+#   list(1:6)
+# )
 structure <- list(
   rep(10,10),
   as.list(1:10),
@@ -207,6 +207,7 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   W_shr <- shrinkage_est(
     y - y_hat
   )
+
   window <- round(Tsplit * 0.7)
   W_n <- novelist_cv(
     y,
@@ -228,10 +229,23 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   #   ensure_PD = TRUE
   # )
 
+  W_n_hstep <- novelist_cv(
+    y,
+    y_hat,
+    S,
+    window = window,
+    deltas = seq(0, 1, by = 0.05),
+    h = h,
+    ensure_PD = TRUE,
+    message = message
+  )
+
   # # # # # #
   # Reconcile
   recon_mint_shr <- reconcile_mint(base_fc, S, W_shr$cov)
   recon_mint_n <- reconcile_mint(base_fc, S, W_n$cov)
+
+  recon_mint_n_hstep <- reconcile_mint(base_fc, S, W_n_hstep$cov)
 
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-10)) {
@@ -254,6 +268,7 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
     ols = ((actual - recon_ols)^2),
     mint_shr = ((actual - recon_mint_shr)^2),
     mint_n = ((actual - recon_mint_n)^2),
+    mint_n_hstep = ((actual - recon_mint_n_hstep)^2),
     mint_sample = ((actual - recon_mint_sample)^2)
     # mint_true = ((actual - recon_mint_true)^2)
   )
@@ -262,7 +277,8 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
     SSE = SSE,
     W_shr = W_shr$lambda,
     W_n = c(W_n$lambda, W_n$delta),
-    W1_hat = compute_cov_matrix(y - y_hat, zero_mean = TRUE)
+    W_n_hstep = c(W_n_hstep$lambda, W_n_hstep$delta)
+    # W1_hat = compute_cov_matrix(y - y_hat, zero_mean = TRUE)
   )
 }
 
@@ -313,8 +329,7 @@ with_progress({
 cat("Any error in sim:", any(sapply(res_list, inherits, "sim_error")))
 res_list <- res_list[!sapply(res_list, inherits, "sim_error")]
 
-# model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_sample")
-model_names <- c("base", "ols", "mint_shr", "mint_sample", "mint_shr_bot")
+model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_n_hstep", "mint_sample")
 SSE_cum <- setNames(
   lapply(model_names, function(name) {
     matrix(0, h, length(order_S), dimnames = list(1:h, order_S))
@@ -330,6 +345,7 @@ SSE_cum <- Reduce(function(acc, res) Map(`+`, acc, res$SSE),
                       res_list, init = SSE_cum)
 W_shr_store <- sapply(res_list, `[[`, "W_shr")
 W_n_store <- t(sapply(res_list, `[[`, "W_n")) ; colnames(W_n_store) <- c("lambda", "delta")
+W_n_hstep_store <- t(sapply(res_list, `[[`, "W_n_hstep")) ; colnames(W_n_hstep_store) <- c("lambda", "delta")
 
 MSE <- lapply(SSE_cum, function(mat) mat / M)
 
@@ -413,6 +429,9 @@ library(purrr)
 
 MSE
 
+for (model in names(MSE)) {
+  MSE[[model]] <- as.matrix(MSE[[model]])
+}
 MSE_ts <- transform_sim_MSE(MSE, F)
 
 MSE_ts |> group_by(.model, h) |>
