@@ -208,15 +208,15 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
     y - y_hat
   )
   window <- round(Tsplit * 0.7)
-  # W_n <- novelist_cv(
-  #   y,
-  #   y_hat,
-  #   S,
-  #   window = window,
-  #   deltas = seq(0, 1, by = 0.05),
-  #   ensure_PD = TRUE,
-  #   message = message
-  # )
+  W_n <- novelist_cv(
+    y,
+    y_hat,
+    S,
+    window = window,
+    deltas = seq(0, 1, by = 0.05),
+    ensure_PD = TRUE,
+    message = message
+  )
 
   # C++ version
   # W_n <- novelist_cv_cpp(
@@ -231,7 +231,7 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   # # # # # #
   # Reconcile
   recon_mint_shr <- reconcile_mint(base_fc, S, W_shr$cov)
-  # recon_mint_n <- reconcile_mint(base_fc, S, W_n$cov)
+  recon_mint_n <- reconcile_mint(base_fc, S, W_n$cov)
 
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-10)) {
@@ -246,15 +246,6 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
 
   recon_ols <- reconcile_mint(base_fc, S, diag(rep(1, nrow(S)))) # identity matrix
 
-  # shrinkage over bottom series then aggregate
-  idx <- order_S[substring(order_S, 1, 1) == 'A']
-  W_shr_bot <- shrinkage_est(
-    y[, idx] - y_hat[, idx]
-  )
-  W_shr_bot <- S %*% W_shr_bot$cov %*% t(S)
-  W_shr_bot <- nearPD(W_shr_bot)$mat # ensure positive-definite
-  recon_mint_shr_bot <- reconcile_mint(base_fc, S, W_shr_bot)
-
 
   # # # # # #
   # Return
@@ -262,16 +253,15 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
     base = ((actual - base_fc)^2),
     ols = ((actual - recon_ols)^2),
     mint_shr = ((actual - recon_mint_shr)^2),
-    # mint_n = ((actual - recon_mint_n)^2),
-    mint_sample = ((actual - recon_mint_sample)^2),
-    mint_shr_bot = ((actual - recon_mint_shr_bot)^2)
+    mint_n = ((actual - recon_mint_n)^2),
+    mint_sample = ((actual - recon_mint_sample)^2)
     # mint_true = ((actual - recon_mint_true)^2)
   )
 
   list(
     SSE = SSE,
     W_shr = W_shr$lambda,
-    # W_n = c(W_n$lambda, W_n$delta),
+    W_n = c(W_n$lambda, W_n$delta),
     W1_hat = compute_cov_matrix(y - y_hat, zero_mean = TRUE)
   )
 }
