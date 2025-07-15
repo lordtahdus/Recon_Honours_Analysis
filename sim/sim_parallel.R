@@ -10,38 +10,37 @@ library(feasts)
 library(tsibble)
 library(dplyr)
 
-library(devtools)
-load_all()
+library(ReconCov)
 
 
 # Parameters -----------------------------------
 
 # groups <- c(2,2)
 # groups <- c(4,4,4,4)
-# groups <- c(6,6,6,6,6,6)
-groups <- c(50,50)
+groups <- c(6,6,6,6,6,6)
+# groups <- c(50,50)
 
-T <- 304
+T <- 54
 h <- 4
 Tsplit <- T - h
 
+# structure <- list(
+#   groups,
+#   as.list(seq(1,length(groups))),
+#   list(c(1,2))
+# )
 structure <- list(
   groups,
   as.list(seq(1,length(groups))),
-  list(c(1,2))
+  list(c(1,2,3,4))
 )
-# structure <- list(
-#   groups,
-#   as.list(seq(1,length(groups))),
-#   list(c(1,2,3,4))
-# )
-# structure <- list(
-#   groups,
-#   as.list(seq(1,length(groups))),
-#   # list(c(1,2,3), c(4,5,6)),
-#   # list(c(1,2))
-#   list(1:6)
-# )
+structure <- list(
+  groups,
+  as.list(seq(1,length(groups))),
+  # list(c(1,2,3), c(4,5,6)),
+  # list(c(1,2))
+  list(1:6)
+)
 structure <- list(
   rep(10,10),
   as.list(1:10),
@@ -49,16 +48,17 @@ structure <- list(
   list(1:3)
 )
 
-(S <- construct_S(
+S <- construct_S(
   structure = structure,
   sparse = FALSE,
   ascending = FALSE
-))
+)
+S %>% plot_heatmap()
 order_S <- rownames(S)
 
 # ranges for coefs in VAR
-diag_range <- c(-0.45, 0.45)
-offdiag_range <- c(-0.2, 0.2)
+diag_range <- c(-0.6, 0.6)
+offdiag_range <- c(-0.4, 0.4)
 
 ## VAR(1) block -------------------------
 A <- generate_block_diag(
@@ -82,13 +82,13 @@ for (block in seq_along(groups)) {
 
 
 ## Sigma ---------------------------------
-rho <- runif(length(groups), 0.5, 0.8)
+rho <- runif(length(groups), 0.5, 0.7)
 Sigma <- generate_cor(
   groups = groups,
   rho = rho,
   delta = min(rho) * 0.5,
   # delta = 0.15,
-  epsilon = (1-max(rho))*0.5,
+  epsilon = (1-max(rho))*0.9,
   # epsilon = 0.15,
   eidim = length(groups)
 )
@@ -106,7 +106,7 @@ Sigma <- convert_cor2cov(
 )
 # flip signs
 V <- diag(x = sample(
-  c(1,1),
+  c(-1,1),
   size = sum(groups), replace = TRUE,
   prob= c(0.5, 0.5)
 ))
@@ -217,20 +217,21 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   #   ensure_PD = TRUE,
   #   message = message
   # )
+
   # C++ version
-  W_n <- novelist_cv_cpp(
-    y,
-    y_hat,
-    S,
-    window = window,
-    deltas = seq(0, 1, by = 0.05),
-    ensure_PD = TRUE
-  )
+  # W_n <- novelist_cv_cpp(
+  #   y,
+  #   y_hat,
+  #   S,
+  #   window = window,
+  #   deltas = seq(0, 1, by = 0.05),
+  #   ensure_PD = TRUE
+  # )
 
   # # # # # #
   # Reconcile
   recon_mint_shr <- reconcile_mint(base_fc, S, W_shr$cov)
-  recon_mint_n <- reconcile_mint(base_fc, S, W_n$cov)
+  # recon_mint_n <- reconcile_mint(base_fc, S, W_n$cov)
 
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-10)) {
@@ -245,21 +246,32 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
 
   recon_ols <- reconcile_mint(base_fc, S, diag(rep(1, nrow(S)))) # identity matrix
 
+  # shrinkage over bottom series then aggregate
+  idx <- order_S[substring(order_S, 1, 1) == 'A']
+  W_shr_bot <- shrinkage_est(
+    y[, idx] - y_hat[, idx]
+  )
+  W_shr_bot <- S %*% W_shr_bot$cov %*% t(S)
+  W_shr_bot <- nearPD(W_shr_bot)$mat # ensure positive-definite
+  recon_mint_shr_bot <- reconcile_mint(base_fc, S, W_shr_bot)
+
+
   # # # # # #
   # Return
   SSE <- list(
     base = ((actual - base_fc)^2),
     ols = ((actual - recon_ols)^2),
     mint_shr = ((actual - recon_mint_shr)^2),
-    mint_n = ((actual - recon_mint_n)^2),
-    mint_sample = ((actual - recon_mint_sample)^2)
+    # mint_n = ((actual - recon_mint_n)^2),
+    mint_sample = ((actual - recon_mint_sample)^2),
+    mint_shr_bot = ((actual - recon_mint_shr_bot)^2)
     # mint_true = ((actual - recon_mint_true)^2)
   )
 
   list(
     SSE = SSE,
     W_shr = W_shr$lambda,
-    W_n = c(W_n$lambda, W_n$delta),
+    # W_n = c(W_n$lambda, W_n$delta),
     W1_hat = compute_cov_matrix(y - y_hat, zero_mean = TRUE)
   )
 }
@@ -274,7 +286,7 @@ handlers("txtprogressbar")  # or "progress" for a fancier bar
 
 plan(multisession, workers = parallel::detectCores() - 1)
 
-M <- 50
+M <- 200
 
 # PARALLEL
 # res_list <- future_lapply(seq_len(M), function(i) run(), future.seed=TRUE)
@@ -311,7 +323,8 @@ with_progress({
 cat("Any error in sim:", any(sapply(res_list, inherits, "sim_error")))
 res_list <- res_list[!sapply(res_list, inherits, "sim_error")]
 
-model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_sample")
+# model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_sample")
+model_names <- c("base", "ols", "mint_shr", "mint_sample", "mint_shr_bot")
 SSE_cum <- setNames(
   lapply(model_names, function(name) {
     matrix(0, h, length(order_S), dimnames = list(1:h, order_S))
