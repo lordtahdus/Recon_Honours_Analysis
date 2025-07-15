@@ -410,7 +410,7 @@ file <- paste0(
   S_string,
   "_T", T-h,
   "_M", M,
-  "_dense"
+  "_sparsebwgrp"
 )
 saveRDS(results, file = paste("sim/sim_results/", file, ".rds", sep = ""))
 
