@@ -18,7 +18,7 @@ library(ReconCov)
 # groups <- c(2,2)
 # groups <- c(4,4,4,4)
 # groups <- c(6,6,6,6,6,6)
-groups <- c(50,50)
+# groups <- c(50,50)
 
 T <- 304
 h <- 4
@@ -410,7 +410,7 @@ file <- paste0(
   S_string,
   "_T", T-h,
   "_M", M,
-  "_dense"
+  "_sparsebwgrp_hstep"
 )
 saveRDS(results, file = paste("sim/sim_results/", file, ".rds", sep = ""))
 
@@ -480,7 +480,7 @@ error_df %>%
 
 # box plot of 1-step-ahead relative improvement
 error_df %>%
-  filter(h == 1) %>%
+  # filter(h == 1) %>%
   group_by(.model, id) %>%
   summarise(MSE = mean(e2)) %>%
   # calculate relative improvement compared to base model
@@ -494,7 +494,7 @@ error_df %>%
   ggplot(aes(x = .model, y = pct_change, color = .model)) +
     geom_boxplot() +
     labs(x = "Model", y = "% relative improvements in MSE",
-         title = "% relative improvements in MSE compared to base, 1-step-ahead forecasts") +
+         title = "% relative improvements in MSE compared to base, 1-to-4-step-ahead forecasts") +
     theme_minimal()
 
 
