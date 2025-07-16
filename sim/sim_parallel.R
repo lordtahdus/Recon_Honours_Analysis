@@ -20,7 +20,7 @@ library(ReconCov)
 # groups <- c(6,6,6,6,6,6)
 groups <- c(50,50)
 
-T <- 104
+T <- 304
 h <- 4
 Tsplit <- T - h
 
@@ -292,7 +292,7 @@ handlers("txtprogressbar")  # or "progress" for a fancier bar
 
 plan(multisession, workers = parallel::detectCores() - 1)
 
-M <- 200
+M <- 100
 
 # PARALLEL
 # res_list <- future_lapply(seq_len(M), function(i) run(), future.seed=TRUE)
@@ -410,7 +410,7 @@ file <- paste0(
   S_string,
   "_T", T-h,
   "_M", M,
-  "_sparsebwgrp"
+  "_dense"
 )
 saveRDS(results, file = paste("sim/sim_results/", file, ".rds", sep = ""))
 

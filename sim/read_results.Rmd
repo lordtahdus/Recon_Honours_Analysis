@@ -18,9 +18,9 @@ library(ggplot2)
 library(tsibble)
 library(dplyr)
 
-library(devtools)
-load_all()
-
+# library(devtools)
+# load_all()
+library(ReconCov)
 library(purrr)
 ```
 
