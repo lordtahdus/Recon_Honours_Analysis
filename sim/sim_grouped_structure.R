@@ -185,23 +185,23 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   #   ensure_PD = TRUE
   # )
 
-  W_n_hstep <- novelist_cv(
-    y,
-    y_hat,
-    S,
-    window = window,
-    deltas = seq(0, 1, by = 0.05),
-    h = h,
-    ensure_PD = TRUE,
-    message = message
-  )
+  # W_n_hstep <- novelist_cv(
+  #   y,
+  #   y_hat,
+  #   S,
+  #   window = window,
+  #   deltas = seq(0, 1, by = 0.05),
+  #   h = h,
+  #   ensure_PD = TRUE,
+  #   message = message
+  # )
 
   # # # # # #
   # Reconcile
   recon_mint_shr <- reconcile_mint(base_fc, S, W_shr$cov)
   recon_mint_n <- reconcile_mint(base_fc, S, W_n$cov)
 
-  recon_mint_n_hstep <- reconcile_mint(base_fc, S, W_n_hstep$cov)
+  # recon_mint_n_hstep <- reconcile_mint(base_fc, S, W_n_hstep$cov)
 
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-10)) {
@@ -223,8 +223,8 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
     base = ((actual - base_fc)^2),
     ols = ((actual - recon_ols)^2),
     mint_shr = ((actual - recon_mint_shr)^2),
-    mint_n = ((actual - recon_mint_n)^2),
-    mint_n_hstep = ((actual - recon_mint_n_hstep)^2),
+    mint_n = ((actual - recon_mint_n)^2) %>% as.matrix(),
+    # mint_n_hstep = ((actual - recon_mint_n_hstep)^2),
     mint_sample = ((actual - recon_mint_sample)^2)
     # mint_true = ((actual - recon_mint_true)^2)
   )
@@ -232,8 +232,8 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   list(
     SSE = SSE,
     W_shr = W_shr$lambda,
-    W_n = c(W_n$lambda, W_n$delta),
-    W_n_hstep = c(W_n_hstep$lambda, W_n_hstep$delta)
+    W_n = c(W_n$lambda, W_n$delta)
+    # W_n_hstep = c(W_n_hstep$lambda, W_n_hstep$delta)
     # W1_hat = compute_cov_matrix(y - y_hat, zero_mean = TRUE)
   )
 }
@@ -250,7 +250,7 @@ handlers("txtprogressbar")  # or "progress" for a fancier bar
 
 plan(multisession, workers = parallel::detectCores() - 1)
 
-M <- 100
+M <- 200
 
 # PARALLEL
 # res_list <- future_lapply(seq_len(M), function(i) run(), future.seed=TRUE)
@@ -287,7 +287,8 @@ with_progress({
 cat("Any error in sim:", any(sapply(res_list, inherits, "sim_error")))
 res_list <- res_list[!sapply(res_list, inherits, "sim_error")]
 
-model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_n_hstep", "mint_sample")
+# model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_n_hstep", "mint_sample")
+model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_sample")
 SSE_cum <- setNames(
   lapply(model_names, function(name) {
     matrix(0, h, length(order_S), dimnames = list(1:h, order_S))
@@ -303,7 +304,7 @@ SSE_cum <- Reduce(function(acc, res) Map(`+`, acc, res$SSE),
                   res_list, init = SSE_cum)
 W_shr_store <- sapply(res_list, `[[`, "W_shr")
 W_n_store <- t(sapply(res_list, `[[`, "W_n")) ; colnames(W_n_store) <- c("lambda", "delta")
-W_n_hstep_store <- t(sapply(res_list, `[[`, "W_n_hstep")) ; colnames(W_n_hstep_store) <- c("lambda", "delta")
+# W_n_hstep_store <- t(sapply(res_list, `[[`, "W_n_hstep")) ; colnames(W_n_hstep_store) <- c("lambda", "delta")
 
 MSE <- lapply(SSE_cum, function(mat) mat / M)
 
@@ -336,9 +337,10 @@ for (i in 2:length(structure)) {
 }
 file <- paste0(
   S_string,
+  "_grouped",
   "_T", T-h,
   "_M", M,
-  "_sparsebwgrp_hstep"
+  ""
 )
 saveRDS(results, file = paste("sim/sim_results/", file, ".rds", sep = ""))
 
@@ -370,7 +372,7 @@ MSE_ts |> group_by(.model, h) |>
   theme_minimal()
 
 
-MSE$mint_shr - MSE$mint_n
+# MSE$mint_shr - MSE$mint_n
 
 MSE_ts |>
   group_by(series, h) |>
@@ -384,12 +386,40 @@ MSE_ts |>
     base_MSE = mean(base_MSE),
     pct_change = (MSE - base_MSE) / base_MSE * 100
   ) |>
-  filter(h <=16) |>
   ggplot(aes(x = h, y = pct_change, color = .model)) +
   geom_line() +
   labs(x = "Horizon", y = "% improvements",
        title = "% relative improvements in MSE compared to Base") +
   theme_minimal()
+
+
+# hier_level <- MSE_ts$series |>
+#   substring(1, 1) |>
+#   unique() |> sort(decreasing = TRUE)
+
+MSE_ts %>%
+  mutate(
+    level = substring(series, 1, 1)
+  ) %>%
+  group_by(series, h) |>
+  mutate(
+    base_MSE = MSE[.model == "base"]
+  ) |>
+  ungroup() %>%
+  group_by(.model, h, level) |>
+  summarise(
+    MSE = mean(MSE),
+    base_MSE = mean(base_MSE),
+    pct_change = (MSE - base_MSE) / base_MSE * 100
+  ) |>
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+    geom_line() +
+    facet_wrap(~ level, ncol = 4) +
+    theme_minimal() +
+    labs(x = "Horizon", y = "% relative improvements in MSE",
+         title = "% relative improvements in MSE compared to base",
+         subtitle = "by hierarchy level: A-bottom, B-1st attribute, C-2nd attribute, D-top")
+
 
 
 ## Box plot -------------------
