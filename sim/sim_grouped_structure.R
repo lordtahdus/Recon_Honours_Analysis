@@ -19,7 +19,7 @@ library(ReconCov)
 # groups <- c(2,2)
 groups <- rep(10,10)
 
-T <- 104
+T <- 304
 h <- 4
 Tsplit <- T - h
 
@@ -97,16 +97,16 @@ A %>% plot_heatmap()
 
 ## Sigma -------------------------
 rho_min <- 0.4
-rho_max <- 0.7
+rho_max <- 0.6
 rho <- runif(length(groups), rho_min, rho_max)
 Sigma <- generate_cor(
   groups = groups,
   rho = rho,
-  delta = min(rho) * 0.2,
+  delta = min(rho) * 0.3,
   # delta = 0.15,
-  epsilon = (1-max(rho))*0.6,
+  epsilon = (1-max(rho))*0.8,
   # epsilon = 0.15,
-  eidim = length(groups)
+  eidim = 3
 )
 Sigma %>% plot_heatmap()
 
@@ -146,6 +146,8 @@ Sigma <- V %*% Sigma %*% V
 #enforce symmetric
 Sigma <- (Sigma + t(Sigma)) / 2
 Sigma <- nearPD(Sigma)$mat %>% as.matrix()
+
+plot_heatmap(Sigma)
 plot_heatmap(Sigma %>% cov2cor(), TRUE)
 
 # Function -----------------------------------
@@ -250,7 +252,7 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-10)) {
     cat("Sample covariance for mint_sample is singular, using nearPD\n")
-    sample_cov <- nearPD(sample_cov)$mat
+    sample_cov <- nearPD(sample_cov)$mat %>% as.matrix()
   }
   recon_mint_sample <- reconcile_mint(base_fc, S, sample_cov)
 
@@ -372,7 +374,7 @@ results <- list(
   W_n    = W_n_store          # same
 )
 error_list <- purrr::map(res_list, "SSE")
-W1_hat_list <- purrr::map(res_list, "W1_hat")
+# W1_hat_list <- purrr::map(res_list, "W1_hat")
 
 # Save to file
 S_string <- paste0("S", sum(groups))
@@ -462,13 +464,17 @@ MSE_ts %>%
     theme_minimal() +
     labs(x = "Horizon", y = "% relative improvements in MSE",
          title = "% relative improvements in MSE compared to base",
-         subtitle = "by hierarchy level: A-bottom, B-1st attribute, C-2nd attribute, D-top")
+         subtitle = "by hierarchy level: A-bottom, B-1st attribute, X-2nd attribute, C-top")
 
 
 
 ## Box plot -------------------
 
 # transform into df
+for (i in 1:length(error_list)) {
+  error_list[[i]]$mint_sample <- as.matrix(error_list[[i]]$mint_sample)
+}
+
 error_df <- transform_error_list(error_list)
 
 # box plot of 1-step-ahead error2
@@ -482,7 +488,7 @@ error_df %>%
 
 # box plot of 1-step-ahead relative improvement
 error_df %>%
-  # filter(h == 1) %>%
+  filter(h == 1) %>%
   group_by(.model, id) %>%
   summarise(MSE = mean(e2)) %>%
   # calculate relative improvement compared to base model
@@ -496,7 +502,8 @@ error_df %>%
   ggplot(aes(x = .model, y = pct_change, color = .model)) +
   geom_boxplot() +
   labs(x = "Model", y = "% relative improvements in MSE",
-       title = "% relative improvements in MSE compared to base, 1-to-4-step-ahead forecasts") +
+       # title = "% relative improvements in MSE compared to base, 1-to-4-step-ahead forecasts") +
+       title = "% relative improvements in MSE compared to base, 1-step-ahead forecasts") +
   theme_minimal()
 
 
