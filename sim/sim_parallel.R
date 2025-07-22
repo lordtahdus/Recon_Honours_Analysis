@@ -15,6 +15,12 @@ library(ReconCov)
 
 # Parameters -----------------------------------
 
+groups <- params$groups
+S <- params$S
+A <- params$A
+Sigma <- params$Sigma
+order_S <- rownames(S)
+
 # groups <- c(2,2)
 # groups <- c(4,4,4,4)
 # groups <- c(6,6,6,6,6,6)
@@ -24,11 +30,11 @@ T <- 304
 h <- 4
 Tsplit <- T - h
 
-# structure <- list(
-#   groups,
-#   as.list(seq(1,length(groups))),
-#   list(c(1,2))
-# )
+structure <- list(
+  groups,
+  as.list(seq(1,length(groups))),
+  list(c(1,2))
+)
 # structure <- list(
 #   groups,
 #   as.list(seq(1,length(groups))),
@@ -250,7 +256,9 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-10)) {
     cat("Sample covariance for mint_sample is singular, using nearPD\n")
-    sample_cov <- nearPD(sample_cov)$mat
+    sample_cov <- as.matrix(
+      nearPD(sample_cov)$mat
+    )
   }
   recon_mint_sample <- reconcile_mint(base_fc, S, sample_cov)
 
@@ -292,7 +300,7 @@ handlers("txtprogressbar")  # or "progress" for a fancier bar
 
 plan(multisession, workers = parallel::detectCores() - 1)
 
-M <- 100
+M <- 500
 
 # PARALLEL
 # res_list <- future_lapply(seq_len(M), function(i) run(), future.seed=TRUE)
@@ -301,7 +309,7 @@ M <- 100
 with_progress({
   p <- progressor(along = 1:M)  # auto sets steps = length
 
-  set.seed(2)
+  set.seed(1)
   res_list <- future_lapply(
     X = 1:M,
     FUN = function(i) {
@@ -396,7 +404,8 @@ results <- list(
   Sigma  = Sigma,
   MSE    = MSE,    # or averaged MSE
   W_shr  = W_shr_store,       # can be a list of matrices or one matrix
-  W_n    = W_n_store          # same
+  W_n    = W_n_store,          # same
+  W_n_hstep = W_n_hstep_store # same
 )
 error_list <- purrr::map(res_list, "SSE")
 W1_hat_list <- purrr::map(res_list, "W1_hat")
@@ -409,8 +418,8 @@ for (i in 2:length(structure)) {
 file <- paste0(
   S_string,
   "_T", T-h,
-  "_M", M,
-  "_sparsebwgrp_hstep"
+  "_M", M
+  # "_sparsebwgrp_hstep"
 )
 saveRDS(results, file = paste("sim/sim_results/", file, ".rds", sep = ""))
 
