@@ -26,7 +26,7 @@ order_S <- rownames(S)
 # groups <- c(6,6,6,6,6,6)
 # groups <- c(50,50)
 
-T <- 54
+T <- 304
 h <- 4
 Tsplit <- T - h
 
