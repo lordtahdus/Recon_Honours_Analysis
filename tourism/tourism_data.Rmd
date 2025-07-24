@@ -216,18 +216,35 @@ S[length(agg_data$agg)*(vec_c(!!!agg_data$agg)-1) + rep(seq_along(agg_data$agg),
 # }
 
 # rownames
+# row_names <- key_data %>%
+#   distinct(State, Region, Purpose) %>%
+#   mutate(
+#     name = case_when(
+#       Region == "<aggregated>" & State == "<aggregated>" & Purpose == "<aggregated>" ~ "Total",
+#       Region == "<aggregated>" & Purpose == "<aggregated>" ~ as.character(State),
+#       Region == "<aggregated>" & State == "<aggregated>" ~ as.character(Purpose),
+#       Purpose == "<aggregated>" ~ as.character(Region),
+#       Region == "<aggregated>" ~ as.character(paste(State, Purpose, sep = " - ")),
+#       TRUE ~ as.character(paste(Region, Purpose, sep = " - "))
+#     )
+#   )
+
+# rownames
 row_names <- key_data %>%
-  distinct(State, Region, Purpose) %>%
+  distinct(State, Zone, Region, Purpose) %>%
   mutate(
     name = case_when(
-      Region == "<aggregated>" & State == "<aggregated>" & Purpose == "<aggregated>" ~ "Total",
-      Region == "<aggregated>" & Purpose == "<aggregated>" ~ as.character(State),
-      Region == "<aggregated>" & State == "<aggregated>" ~ as.character(Purpose),
+      Region == "<aggregated>" & State == "<aggregated>" & Zone == "<aggregated>" & Purpose == "<aggregated>" ~ "Total",
+      Region == "<aggregated>" & Zone == "<aggregated>" & Purpose == "<aggregated>" ~ as.character(State),
+      Region == "<aggregated>" & Zone == "<aggregated>" & State == "<aggregated>" ~ as.character(Purpose),
+      Region == "<aggregated>" & Zone == "<aggregated>" ~ as.character(paste(State, Purpose, sep = " - ")),
+      Region == "<aggregated>" & Purpose == "<aggregated>" ~ as.character(Zone),
+      Region == "<aggregated>" ~ as.character(paste(Zone, Purpose, sep = " - ")),
       Purpose == "<aggregated>" ~ as.character(Region),
-      Region == "<aggregated>" ~ as.character(paste(State, Purpose, sep = " - ")),
       TRUE ~ as.character(paste(Region, Purpose, sep = " - "))
     )
   )
+
 # colnames
 colnames(S) <- row_names %>% 
   filter(!is_aggregated(Region) & !is_aggregated(Purpose)) %>% 
@@ -575,6 +592,14 @@ plan(multisession, workers = parallel::detectCores() - 1)
 start_date <- visnights_full$Month[1]
 end_date <- yearmonth("2017-01")
 M <- 24
+seq_dates <- list(
+  start = start_date + 0:(M-1),
+  end = end_date + 0:(M-1)
+)
+
+start_date <- visnights_full$Month[1]
+end_date <- start_date + 96
+M <- 156
 seq_dates <- list(
   start = start_date + 0:(M-1),
   end = end_date + 0:(M-1)
