@@ -41,19 +41,21 @@ visnights_raw <- readr::read_csv(
 ```
 
 ```{r states column}
-# Define a mapping of regions to states -----------
+# State -----------
 state_map <- list(
   NSW = c(
-    "Blue Mountains", "Central Coast", "Central NSW", "Goulburn",
+    "Blue Mountains", "Central Coast", "Central NSW",
     "Hunter", "New England North West", "North Coast NSW", "Outback NSW",
     "Riverina", "Snowy Mountains", "South Coast", "Sydney",
-    "Capital Country"
+    "Capital Country", "The Murray",
+    "Canberra" # ACT is included in NSW for simplicity
   ),
   VIC = c(
     "Ballarat", "Bendigo Loddon", "Central Murray", "Geelong and the Bellarine",
     "Gippsland", "Great Ocean Road", "High Country", "Macedon", "Mallee",
     "Melbourne", "Melbourne East", "Murray East", "Peninsula", "Phillip Island",
-    "Spa Country", "The Murray", "Upper Yarra", "Western Grampians", "Wimmera"
+    "Spa Country", "Upper Yarra", "Western Grampians", "Wimmera",
+    "Central Highlands", "Lakes", "Goulburn"
   ),
   QLD = c(
     "Brisbane", "Bundaberg", "Capricorn", "Fraser Coast", "Gladstone",
@@ -72,27 +74,83 @@ state_map <- list(
     "Australia's North West", "Australia's South West", "Destination Perth"
   ),
   TAS = c(
-    "Central Highlands", "East Coast", "Hobart and the South",
-    "Launceston and the North", "Lakes", "North West", "West Coast"
+    "East Coast", "Hobart and the South",
+    "Launceston and the North", "North West", "West Coast"
   ),
   NT = c(
     "Alice Springs", "Barkly", "Darwin", "Katherine Daly",
     "Litchfield Kakadu Arnhem", "Lasseter", "MacDonnell"
-  ),
-  ACT = c(
-    "Canberra"
   )
 )
-# -----------
 
 region_state_lookup <- tibble(
   State  = rep(names(state_map), lengths(state_map)),
   Region = unlist(state_map)
 )
 
+# visnights <- visnights_raw %>%
+#   left_join(region_state_lookup, by = "Region") %>% 
+#   select(Month, State, everything())
+
+# Zone -----------
+zone_map <- list(
+  # NSW
+  `Metro NSW`        = c("Sydney", "Central Coast"),
+  `Nth Coast NSW`    = c("Hunter", "North Coast NSW"),
+  `Sth Coast NSW`    = "South Coast",
+  `Sth NSW`          = c("Snowy Mountains", "Capital Country", "The Murray", "Riverina"),
+  `Nth NSW`          = c("Central NSW", "New England North West", "Outback NSW", "Blue Mountains"),
+  ACT                = "Canberra",
+  
+  # VIC
+  `Metro VIC`        = c("Melbourne", "Peninsula", "Geelong and the Bellarine"),
+  `West Coast VIC`   = "Great Ocean Road",
+  `East Coast VIC`   = c("Lakes", "Gippsland", "Phillip Island"),
+  `Nth East VIC`     = c("Central Murray", "Goulburn", "High Country",
+                         "Melbourne East", "Upper Yarra", "Murray East"),
+  `Nth West VIC`     = c("Wimmera", "Western Grampians", "Bendigo Loddon",
+                         "Macedon", "Spa Country", "Ballarat", "Mallee",
+                         "Central Highlands"),
+  
+  # QLD
+  `Metro QLD`        = c("Gold Coast", "Brisbane", "Sunshine Coast"),
+  `Central Coast QLD`= c("Bundaberg", "Fraser Coast", "Mackay", 
+                         "Southern Queensland Country", "Capricorn", "Gladstone"),
+  `Nth Coast QLD`    = c("Whitsundays", "Tropical North Queensland", "Townsville"),
+  `Inland QLD`       = c("Outback Queensland"),
+  
+  # SA
+  `Metro SA`         = c("Adelaide", "Barossa", "Adelaide Hills"),
+  `Sth Coast SA`     = c("Limestone Coast", "Fleurieu Peninsula", "Kangaroo Island"),
+  `Inland SA`        = c("Riverland", "Clare Valley", "Flinders Ranges and Outback",
+                         "Murray River, Lakes and Coorong"),
+  `West Coast SA`    = c("Eyre Peninsula", "Yorke Peninsula"),
+
+  
+  # WA
+  `West Coast WA`    = c("Destination Perth", "Australia's South West", "Australia's Coral Coast"),
+  `Nth WA`           = "Australia's North West",
+  `Sth WA`           = "Australia's Golden Outback",
+  
+  # TAS
+  `Sth TAS`          = "Hobart and the South",
+  `Nth East TAS`     = c("East Coast", "Launceston and the North"),
+  `Nth West TAS`     = c("North West", "West Coast"),
+  
+  # NT
+  `Nth Coast NT`     = c("Darwin", "Litchfield Kakadu Arnhem", "Katherine Daly"),
+  `Central NT`       = c("Barkly", "Lasseter", "Alice Springs", "MacDonnell")
+)
+
+region_zone_lookup <- tibble(
+  Zone   = rep(names(zone_map), lengths(zone_map)),
+  Region = unlist(zone_map)
+)
+
 visnights <- visnights_raw %>%
-  left_join(region_state_lookup, by = "Region") %>% 
-  select(Month, State, everything())
+  left_join(region_state_lookup, by = "Region") %>%  # your existing state lookup
+  left_join(region_zone_lookup,  by = "Region") %>%
+  select(Month, State, Zone, everything())
 ```
 
 ```{r}
@@ -110,9 +168,9 @@ visnights %>%
 
 ```{r}
 visnights_full <- visnights %>% 
-  as_tsibble(index = Month, key = c(State, Region, Purpose)) %>% 
+  as_tsibble(index = Month, key = c(State, Zone, Region, Purpose)) %>% 
   aggregate_key(
-    (State/Region) * Purpose, 
+    (State/Zone/Region) * Purpose, 
     Nights = sum(Nights)
   )
 
@@ -398,7 +456,7 @@ run <- function(
 ) {
   fit <- data |>
     filter(Month >= start & Month <= end) |>
-    model(base = ETS(Nights))
+    model(base = ARIMA(Nights))
   
   # base forecasts
   h <- 12
@@ -409,8 +467,8 @@ run <- function(
   fit_augment <- fit %>% 
     augment() %>% 
     filter(.model == "base") %>%
-    left_join(row_names, by = c("State", "Region")) %>%
-    select(Month, State, Region, name, .fitted, Nights)
+    left_join(row_names, by = c("State", "Region", "Purpose")) %>%
+    select(Month, State, Region, Purpose, name, .fitted, Nights)
   
   y_hat <- fit_augment %>% 
     as_tibble() %>%
@@ -426,33 +484,34 @@ run <- function(
     select(-Month) %>% 
     as.matrix()
   
-  # Get base forecasts
   base_fc <- fc %>% 
     as_tibble() %>% 
-    left_join(row_names, by = c("State", "Region")) %>%
+    filter(.model == "base") %>%
+    left_join(row_names, by = c("State", "Region", "Purpose")) %>%
     select(name, .mean, Month) %>%
     pivot_wider(names_from = name, values_from = .mean) %>%
     select(-Month) %>% 
     as.matrix()
   
-  # Get actual values
-  actual <- data %>% 
+  actual <- visnights_full %>% 
     filter(Month > end & Month <= end + 12) %>% 
     as_tibble() %>% 
     arrange(State, Region) %>%
-    left_join(row_names, by = c("State", "Region")) %>%
+    left_join(row_names, by = c("State", "Region", "Purpose")) %>%
     select(name, Nights, Month) %>%
     pivot_wider(names_from = name, values_from = Nights) %>%
     select(-Month) %>%
     as.matrix()
   
-  # if true_W_h is provided, use it for mint_true
-  if (!is.null(true_W_h)) {
-    recon_mint_true <- reconcile_mint(base_fc, S, true_W_h)
-    e2 <- ((actual - recon_mint_true)^2)
-    return(e2)
-  }
-  # Otherwise run as usual
+  actual <- actual[, colnames(base_fc)]
+
+  # # if true_W_h is provided, use it for mint_true
+  # if (!is.null(true_W_h)) {
+  #   recon_mint_true <- reconcile_mint(base_fc, S, true_W_h)
+  #   e2 <- ((actual - recon_mint_true)^2)
+  #   return(e2)
+  # }
+  # # Otherwise run as usual
   
   # Cov estimators
   W_shr <- shrinkage_est(
@@ -476,7 +535,7 @@ run <- function(
 
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-8)) {
-    cat("Sample covariance for mint_sample is singular, using nearPD\n")
+    # cat("Sample covariance for mint_sample is singular, using nearPD\n")
     sample_cov <- nearPD(sample_cov)$mat
   }
   recon_mint_sample <- reconcile_mint(base_fc, S, sample_cov)
@@ -509,12 +568,12 @@ library(progressr)
 handlers(global = TRUE) # Setup progress bar handler
 handlers("txtprogressbar")  # or "progress" for a fancier bar
 
-plan(multisession, workers = parallel::detectCores() - 2)
+plan(multisession, workers = parallel::detectCores() - 1)
 
 
 # moving 1 month forward
 start_date <- visnights_full$Month[1]
-end_date <- yearmonth("2015-01")
+end_date <- yearmonth("2017-01")
 M <- 24
 seq_dates <- list(
   start = start_date + 0:(M-1),
@@ -567,8 +626,19 @@ MSE <- lapply(SSE_cum, function(mat) mat / M)
 ```
 
 ```{r}
+MSE$mint_sample <- MSE$mint_sample %>% as.matrix()
+
 MSE_ts <- transform_sim_MSE(MSE, F)
 
+# MSE plot
+MSE_ts |> group_by(.model, h) |>
+  summarise(mse = mean(MSE)) |>
+  ggplot(aes(x = h, y = mse, color = .model)) +
+    geom_line() +
+    labs(x = "Horizon", y = "MSE") +
+    theme_minimal()
+
+# % improv plot
 MSE_ts |>
   group_by(series, h) |>
   mutate(
@@ -581,7 +651,7 @@ MSE_ts |>
     base_MSE = mean(base_MSE),
     pct_change = (MSE - base_MSE) / base_MSE * 100
   ) |>
-  filter(h <=16) |>
+  # filter(h <=16) |>
   ggplot(aes(x = h, y = pct_change, color = .model)) +
   geom_line() +
   labs(x = "Horizon", y = "% improvements",
@@ -593,6 +663,7 @@ MSE_ts |>
 ```{r}
 error_list <- purrr::map(result_list, "e2")
 # transform into df
+
 error_df <- transform_error_list(error_list)
 # box plot of 1-step-ahead relative improvement
 error_df %>%
@@ -821,4 +892,3 @@ MSE_ts |>
 # Save
 saveRDS(tourism_results_48cv, file = "playground/tourism_results_48cv.rds")
 ```
-
