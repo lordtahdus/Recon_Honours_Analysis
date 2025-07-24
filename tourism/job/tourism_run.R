@@ -98,7 +98,7 @@ run <- function(
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-8)) {
     # cat("Sample covariance for mint_sample is singular, using nearPD\n")
-    sample_cov <- nearPD(sample_cov)$mat
+    sample_cov <- as.matrix(nearPD(sample_cov)$mat)
   }
   recon_mint_sample <- reconcile_mint(base_fc, S, sample_cov)
 
