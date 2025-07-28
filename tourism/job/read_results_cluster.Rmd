@@ -1,0 +1,123 @@
+---
+title: "read_results_cluster"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libs}
+# library(MASS)
+# library(matrixcalc)
+# library(Matrix)
+library(tidyr)
+library(ggplot2)
+
+# library(fabletools)
+# library(fable)
+# library(feasts)
+library(tsibble)
+library(dplyr)
+
+# library(devtools)
+# load_all()
+library(ReconCov)
+library(purrr)
+```
+
+
+# Read
+
+```{r}
+S <- readRDS("tourism/data/S.rds")
+row_names <- readRDS("tourism/data/row_names.rds")
+seq_dates <- readRDS("tourism/job/seq_dates.rds")
+
+path <- "tourism/job/results/"
+M <- 156
+result_list <- list()
+for (i in 1:M) {
+  readRDS(paste0(path, "result_", i, ".rds")) -> result
+  result_list[[i]] <- result
+}
+
+
+h <- 12
+model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_sample")
+SSE_cum <- setNames(
+  lapply(model_names, function(name) {
+    matrix(0, h, length(rownames(S)), dimnames = list(1:h, rownames(S)))
+  }),
+  model_names
+)
+# wrangle
+SSE_cum <- Reduce(function(acc, res) Map(`+`, acc, res$e2),
+                      result_list, init = SSE_cum)
+W_shr_store <- sapply(result_list, `[[`, "W_shr")
+W_n_store <- t(sapply(result_list, `[[`, "W_n")) ; colnames(W_n_store) <- c("lambda", "delta")
+
+MSE <- lapply(SSE_cum, function(mat) mat / M)
+```
+
+
+```{r}
+MSE_ts <- transform_sim_MSE(MSE, F)
+
+# MSE plot
+MSE_ts |> group_by(.model, h) |>
+  summarise(mse = mean(MSE)) |>
+  filter(.model != "mint_sample") %>% 
+  ggplot(aes(x = h, y = mse, color = .model)) +
+    geom_line() +
+    labs(x = "Horizon", y = "MSE") +
+    theme_minimal()
+
+# % improv plot
+MSE_ts |>
+  group_by(series, h) |>
+  mutate(
+    base_MSE = MSE[.model == "base"]
+  ) |>
+  ungroup() |>
+  group_by(.model, h) |>
+  summarise(
+    MSE = mean(MSE),
+    base_MSE = mean(base_MSE),
+    pct_change = (MSE - base_MSE) / base_MSE * 100
+  ) |>
+  filter(.model != "mint_sample") %>% 
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+  geom_line() +
+  labs(x = "Horizon", y = "% improvements",
+       title = "% relative improvements in MSE compared to Base") +
+  theme_minimal()
+```
+
+```{r}
+improv_overtime <- matrix(0, 156, length(model_names),
+  dimnames = list(1:156, model_names)
+)
+
+for (i in 1:156) {
+  res <- result_list[[i]]
+  for (model in model_names) {
+    if (model == "base")
+      improv_overtime[i, model] <- mean(res$e2[[model]][1,])
+    else
+      improv_overtime[i, model] <- (mean(res$e2[[model]][1,]) - improv_overtime[i, "base"]) / improv_overtime[i, "base"] * 100
+  }
+}
+
+improv_overtime[, 2:4] |>            # keep the three models
+  as.data.frame() |>
+  cbind(Month = seq_dates$end) %>% 
+  pivot_longer(-Month,
+               names_to  = "model",
+               values_to = "pct_improve") %>% 
+  ggplot(aes(x = Month, y = pct_improve, color = model)) +
+    geom_line() +
+    labs(x = "Month", y = "% improvements",
+         title = "% relative improvements in average error squared compared to Base for each iteration") +
+    theme_minimal()
+
+```
+
+
