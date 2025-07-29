@@ -157,10 +157,32 @@ visnights <- visnights_raw %>%
 visnights %>% 
   group_by(Month, State) %>%
   summarise(Nights = sum(Nights), .groups = "drop") %>%
+  filter(year(Month) > 2011) %>% 
   ggplot(aes(x = Month, y = Nights, color = State)) +
     geom_line() +
-    guides(color = "none") +
+    # guides(color = "none") +
     theme_minimal()
+
+visnights %>% 
+  group_by(Month, State) %>%
+  summarise(Nights = sum(Nights), .groups = "drop") %>% 
+  as_tsibble(index = Month, key = State) %>%
+  model(
+    STL(Nights)
+  ) %>% 
+  components() %>% 
+  pivot_longer(
+    cols = c(Nights, trend, season_year, remainder, season_adjust),
+    names_to = "component",
+    values_to = "value"
+  ) %>%
+  filter(
+    component == c("Nights", "trend")
+  ) %>%
+  # as_tibble() %>% 
+  ggplot(aes(Month, value, color = State)) +
+    geom_line() +
+    facet_wrap(~ component, ncol=1, scales = "free_y")
 ```
 
 
