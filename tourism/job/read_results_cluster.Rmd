@@ -32,7 +32,7 @@ row_names <- readRDS("tourism/data/row_names.rds")
 seq_dates <- readRDS("tourism/job/seq_dates.rds")
 
 path <- "tourism/job/results/"
-M <- 156
+M <- 120
 result_list <- list()
 for (i in 1:M) {
   readRDS(paste0(path, "result_", i, ".rds")) -> result
