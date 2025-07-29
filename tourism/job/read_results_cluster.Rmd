@@ -57,6 +57,9 @@ W_n_store <- t(sapply(result_list, `[[`, "W_n")) ; colnames(W_n_store) <- c("lam
 MSE <- lapply(SSE_cum, function(mat) mat / M)
 ```
 
+# Evaluation
+
+## Average plots
 
 ```{r}
 MSE_ts <- transform_sim_MSE(MSE, F)
@@ -120,4 +123,77 @@ improv_overtime[, 2:4] |>            # keep the three models
 
 ```
 
+
+## At each level
+
+```{r}
+series <- rownames(S)
+
+level_index <- set_names(
+  vector("list", 8),
+  c(
+    "Australia", "State", "Zone", "Region",
+    "Australia_by_Purpose", "State_by_Purpose", 
+    "Zone_by_Purpose", "Region_by_Purpose"
+  )  
+)
+level_index$Australia <- which(series == "Total")
+level_index$State <- which(series %in% names(state_map))
+level_index$Zone <- which(series %in% names(zone_map))
+level_index$Region <- which(series %in% unlist(state_map, use.names = F))
+
+# find indices for series by purpose
+series_split <- strsplit(series, " - ")
+purposes <- c("Business", "Holiday", "Visiting friends and relatives", "Other reason")
+level_index$Australia_by_Purpose <- which(series %in% purposes)
+level_index$State_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% names(state_map))
+)
+level_index$Zone_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% names(zone_map))
+)
+level_index$Region_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% unlist(state_map, use.names = F))
+)
+
+
+# similar to for key, value in dict.items() in Python
+level_map <- imap(level_index, function(value, key){
+  set_names(rep(key, length(value)), series[value])
+}) %>% 
+  flatten_chr()
+```
+
+```{r}
+# MSE at each level
+MSE_ts <- MSE_ts %>% 
+  mutate(
+    level = level_map[series] %||% NA_character_ 
+    # %||% is just “if lookup returns NULL, fall back to NA
+  )
+
+# % improv plot by level
+MSE_ts |>
+  group_by(series, h) |>
+  mutate(
+    base_MSE = MSE[.model == "base"]
+  ) |>
+  ungroup() |>
+  group_by(.model, level, h) |>
+  summarise(
+    MSE = mean(MSE),
+    base_MSE = mean(base_MSE),
+    pct_change = (MSE - base_MSE) / base_MSE * 100
+  ) |>
+  filter(.model != "mint_sample") %>% 
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+    geom_line() +
+    labs(x = "Horizon", y = "% improvements",
+         title = "% relative improvements in MSE compared to Base") +
+    facet_wrap(~ level, ncol=2, scales = "free_y") +
+    theme_minimal()
+```
 
