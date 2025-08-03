@@ -1,0 +1,88 @@
+---
+title: "R Notebook"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+library(patchwork)
+
+p_region <- visnights %>% 
+  group_by(Month, Region) %>%
+  summarise(Nights = sum(Nights), .groups = "drop") %>%
+  filter(year(Month) > 2015) %>% 
+  ggplot(aes(x = Month, y = Nights, color = Region)) +
+    geom_line(alpha = 0.4) +
+    guides(color = "none") +
+    labs(
+        subtitle = "77 Regions",
+        title = "Australian Domestic Tourism Monthly Flows in 77 Regions, summing up to 7 States, 
+and up to Total Australia"
+    ) +
+    scale_x_yearmonth(
+      breaks = yearmonth(c("2017 Jan", "2019 Jan")),   # two yearmonth objects
+      labels = c("Jan 2017", "Jan 2019")                # custom text
+    ) +
+    scale_y_continuous(
+      limits = c(0, 55000),           # lower limit 0, upper auto
+      expand = c(0, 0)             # remove padding at axes
+    ) +
+    theme_bw() +
+    theme(
+      plot.subtitle = element_text(hjust = 0.5)  # center the title
+    )
+
+p_state <- visnights %>% 
+  group_by(Month, State) %>%
+  summarise(Nights = sum(Nights), .groups = "drop") %>%
+  filter(year(Month) > 2015) %>% 
+  ggplot(aes(x = Month, y = Nights, color = State)) +
+    geom_line(alpha = 1) +
+    guides(color = "none") +
+    labs(
+        subtitle = "7 States"
+    ) +
+    scale_x_yearmonth(
+      breaks = yearmonth(c("2017 Jan", "2019 Jan")),   # two yearmonth objects
+      labels = c("Jan 2017", "Jan 2019")                # custom text
+    ) +
+    scale_y_continuous(
+      limits = c(0, 55000),           # lower limit 0, upper auto
+      expand = c(0, 0)             # remove padding at axes
+    ) +
+    theme_bw() +
+    theme(
+      plot.subtitle = element_text(hjust = 0.5)  # center the title
+    )
+
+p_aus <- visnights %>% 
+  group_by(Month) %>%
+  summarise(Nights = sum(Nights), .groups = "drop") %>%
+  filter(year(Month) > 2015) %>% 
+  ggplot(aes(x = Month, y = Nights)) +
+    geom_line(alpha = 1, color = "red") +
+    guides(color = "none") +
+    labs(
+      subtitle = "Australia",
+      caption = "Source: Tourism Research Australia"
+    ) +
+    scale_x_yearmonth(
+      breaks = yearmonth(c("2017 Jan", "2019 Jan")),   # two yearmonth objects
+      labels = c("Jan 2017", "Jan 2019")                # custom text
+    ) +
+    scale_y_continuous(
+      limits = c(0, 55000),           # lower limit 0, upper auto
+      expand = c(0, 0)             # remove padding at axes
+    ) +
+    theme_bw() +
+    theme(
+      plot.subtitle = element_text(hjust = 0.5)  # center the title
+    )
+
+p_region + p_state + p_aus + 
+    plot_layout(ncol = 3, guides = "collect", axis_titles = "collect", axes = "collect") & 
+    labs(
+        y = "Visitor Nights (Thousands)"
+    )
+```
