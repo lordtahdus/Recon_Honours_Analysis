@@ -285,8 +285,8 @@ S %>% plot_heatmap(T)
 fit_augment <- fit %>% 
   augment() %>% 
   filter(.model == "base") %>%
-  left_join(row_names, by = c("State", "Region", "Purpose")) %>%
-  select(Month, State, Region, name, .fitted, Nights)
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) %>%
+  select(Month, State, Zone, Region, name, .fitted, Nights)
 
 y_hat <- fit_augment %>% 
   as_tibble() %>%
@@ -479,6 +479,21 @@ accuracy_fable |>
     labs(x = "Horizon", y = "% relative improvements in MSE") +
     theme_minimal()
 
+```
+
+
+# PCA on residuals
+
+```{r}
+library(nFactors)
+
+eigenvals <- eigen(cor(resid))$values 
+eigenvals |> plot()
+nScree(x = eigenvals)$Components
+
+eigenvals_bot <- eigen(cor(resid[, colnames(S)]))$values
+eigenvals_bot |> plot()
+nScree(x = eigenvals_bot)$Components
 ```
 
 
