@@ -204,15 +204,14 @@ visnights_full <- visnights %>%
 ## Base fc
 
 ```{r}
-year_filter <- 2018
+year_filter <- 2014
 fit <- visnights_full |>
   filter(year(Month) <= year_filter) |>
-  model(base = ETS(Nights)) %>% 
-  reconcile(
-    ols = min_trace(base, method = "ols"),
-    # mint_sample = min_trace(base, method = "mint_cov"),  # mint_cov need PD
-    mint_shr = min_trace(base, method = "mint_shrink")
-  )
+  model(base = ARIMA(Nights)) # %>% 
+  # reconcile(
+  #   ols = min_trace(base, method = "ols"),
+  #   mint_shr = min_trace(base, method = "mint_shrink")
+  # )
 
 # base forecasts
 h <- 12
@@ -307,7 +306,7 @@ y <- fit_augment %>%
 base_fc <- fc %>% 
   as_tibble() %>% 
   filter(.model == "base") %>%
-  left_join(row_names, by = c("State", "Region", "Purpose")) %>%
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) %>%
   select(name, .mean, Month) %>%
   pivot_wider(names_from = name, values_from = .mean) %>%
   select(-Month) %>% 
@@ -317,7 +316,7 @@ actual <- visnights_full %>%
   filter(year(Month) > year_filter & year(Month) <= year_filter +1) %>% 
   as_tibble() %>% 
   arrange(State, Region) %>%
-  left_join(row_names, by = c("State", "Region", "Purpose")) %>%
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) %>%
   select(name, Nights, Month) %>%
   pivot_wider(names_from = name, values_from = Nights) %>%
   select(-Month) %>%
@@ -491,9 +490,13 @@ eigenvals <- eigen(cor(resid))$values
 eigenvals |> plot()
 nScree(x = eigenvals)$Components
 
-eigenvals_bot <- eigen(cor(resid[, colnames(S)]))$values
-eigenvals_bot |> plot()
+eigenvals_bot <- eigen(cor(resid[1:120, colnames(S)]))$values
+eigenvals_bot[1:50] |> plot()
 nScree(x = eigenvals_bot)$Components
+
+
+library(rmfd4dfm)         # Bai–Ng IC implementations
+baingcriterion(resid[, colnames(S)], rmax = 20)   # one of the ICs
 ```
 
 
@@ -635,12 +638,13 @@ seq_dates <- list(
 )
 
 start_date <- visnights_full$Month[1]
-end_date <- start_date + 96
-M <- 156
+end_date <- start_date + 120 - 1
+M <- 133
 seq_dates <- list(
   start = start_date + 0:(M-1),
   end = end_date + 0:(M-1)
 )
+saveRDS(seq_dates, file = "tourism/job/seq_dates.rds")
 
 # parallel with progress bar
 with_progress({
