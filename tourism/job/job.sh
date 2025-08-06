@@ -2,7 +2,7 @@
 #SBATCH --job-name=sim_chunk
 #SBATCH --output=tourism/job/logs/output_%A_%a.log
 #SBATCH --error=tourism/job/logs/error_%A_%a.log
-#SBATCH --array=1-156
+#SBATCH --array=1-133
 #SBATCH --time=24:00:00
 #SBATCH --mem=4G
 #SBATCH --cpus-per-task=1
