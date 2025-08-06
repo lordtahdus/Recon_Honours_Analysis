@@ -1,6 +1,5 @@
 library(Matrix)
 library(tidyr)
-library(ggplot2)
 
 library(vctrs)
 library(fabletools)
@@ -39,7 +38,7 @@ run <- function(
     augment() %>%
     filter(.model == "base") %>%
     left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) %>%
-    select(Month, State, Region, Purpose, name, .fitted, Nights)
+    select(Month, State, Zone, Region, Purpose, name, .fitted, Nights)
 
   y_hat <- fit_augment %>%
     as_tibble() %>%
@@ -76,47 +75,71 @@ run <- function(
   actual <- actual[, rownames(S)]
 
   # Cov estimators
+  Ks <- c(0, 1, 2, 5, 10, 20)
+
+  # shrinkage estimator
   W_shr <- shrinkage_est(
     y - y_hat
   )
+  # shrinkage estimator with PC adjustment
+  W_shr_pc <- lapply(Ks[-1], function(K) {
+    shrinkage_pc_est(y - y_hat, K = K)
+  })
+  names(W_shr_pc) <- paste0("K", Ks[-1])
+
 
   window <- round(dim(y)[1] * 0.7)
-  W_n <- novelist_cv(
+  # NOVELIST estimator with and without PC adjustment
+  W_n_list <- novelist_pc_cv(
     y,
     y_hat,
+    Ks = Ks,
     S,
     window = window,
     deltas = seq(0, 1, by = 0.05),
     ensure_PD = TRUE,
-    message = TRUE
+    message = FALSE
   )
+  W_n <- W_n_list$cov[[1]]
 
   # Reconcile
-  recon_mint_shr <- reconcile_mint(base_fc, S, W_shr$cov)
-  recon_mint_n <- reconcile_mint(base_fc, S, W_n$cov)
+  recon_mint_shr <- reconcile_mint(base_fc, S, W_shr$cov)  
+  recon_mint_n <- reconcile_mint(base_fc, S, W_n)
 
-  sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
-  if (any(eigen(sample_cov)$values < 1e-8)) {
-    # cat("Sample covariance for mint_sample is singular, using nearPD\n")
-    sample_cov <- as.matrix(nearPD(sample_cov)$mat)
-  }
-  recon_mint_sample <- reconcile_mint(base_fc, S, sample_cov)
+  recon_mint_shr_pc <- lapply(W_shr_pc, function(W) {
+    reconcile_mint(base_fc, S, W$cov)
+  })
+  recon_mint_n_pc <- lapply(W_n_list$cov[-1], function(W) {
+    reconcile_mint(base_fc, S, W)
+  })
 
   recon_ols <- reconcile_mint(base_fc, S, diag(rep(1, nrow(S)))) # identity matrix
 
-  e2 <- list(
-    base = ((actual - base_fc)^2),
-    ols = ((actual - recon_ols)^2),
-    mint_shr = ((actual - recon_mint_shr)^2),
-    mint_n = ((actual - recon_mint_n)^2),
-    mint_sample = ((actual - recon_mint_sample)^2)
+  # list of out-of-sample errors
+  e <- list(
+    base = actual - base_fc,
+    ols = actual - recon_ols,
+    mint_shr = actual - recon_mint_shr,
+    mint_n = actual - recon_mint_n,
+    mint_shr_pc = lapply(recon_mint_shr_pc, function(x) actual - x), # sublist
+    mint_n_pc = lapply(recon_mint_n_pc, function(x) actual - x) # sublist
   )
 
+  # lambdas for shrinkage
+  W_shr_lambdas <- c(
+    K0 = W_shr$lambda,
+    sapply(W_shr_pc, function(x) x$lambda)
+  )
+  
   return(list(
-    e2 = e2,
-    resid_base = actual - base_fc,
-    W_shr = W_shr$lambda,
-    W_n = c(W_n$lambda, W_n$delta)
+    e = e,
+    resid = y - y_hat,
+    base_fit = fit,
+    W_shr = W_shr_lambdas,
+    W_n = rbind(
+      delta = W_n_list$delta,
+      lambda = W_n_list$lambda
+    )
   ))
 }
 
@@ -132,6 +155,6 @@ result <- run(
   start = start_month,
   end = end_month
 )
-file <- paste("tourism/job/results/result_", index, ".rds")
+file <- paste0("tourism/job/results/result_", index, ".rds")
 
 saveRDS(result, file = file)
