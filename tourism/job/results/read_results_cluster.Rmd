@@ -1,0 +1,251 @@
+---
+title: "read_results_cluster"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libs}
+# library(MASS)
+# library(matrixcalc)
+# library(Matrix)
+library(tidyr)
+library(ggplot2)
+
+# library(fabletools)
+# library(fable)
+# library(feasts)
+library(tsibble)
+library(dplyr)
+
+# library(devtools)
+# load_all()
+library(ReconCov)
+library(purrr)
+```
+
+
+# Read
+
+```{r}
+S <- readRDS("tourism/data/S.rds")
+row_names <- readRDS("tourism/data/row_names.rds")
+seq_dates <- readRDS("tourism/job/seq_dates.rds")
+
+path <- "D:/Github/tourism_cluster/results/" # new results
+
+M <- 133
+
+result_list <- list()
+for (i in 1:M) {
+  if (i == 19) next # iteration 19 has error
+  result <- readRDS(paste0(path, "result_", i, ".rds")) 
+  # result_list[[i]] <- result
+  result_list[[i]] <- result[-3] # not taking the base fitted models
+}
+result_list <- result_list[-19]
+
+# remove the last 3 years of results
+M <- M - 3*12 - 1 # -1 for the removed iteration 19
+result_list <- result_list[1:M]
+
+# flatten out the sublist in `e`
+flatten_e_list <- function(e_list) {
+  out <- list()
+
+  for (name in names(e_list)) {
+    obj <- e_list[[name]]
+
+    if (is.list(obj) && all(vapply(obj, is.matrix, logical(1)))) {
+      ## e.g. name == "mint_shr_pc", obj contains K1 … K20
+      for (k in names(obj)) {
+        out[[paste(name, k, sep = "_")]] <- obj[[k]]   # “mint_shr_pc_K1”, …
+      }
+    } else {
+      out[[name]] <- obj                               # “base”, “ols”, …
+    }
+  }
+  out                                             # all matrices at top level
+}
+all_model_names <- names(flatten_e_list(result_list[[1]]$e))
+
+
+h <- 12
+# model_names <- c("base", "ols", "mint_shr", "mint_n")
+SSE_cum <- setNames(
+  lapply(all_model_names, function(name) {
+    matrix(0, h, length(rownames(S)), dimnames = list(1:h, rownames(S)))
+  }),
+  all_model_names
+)
+# wrangle
+# SSE_cum <- Reduce(function(acc, res) Map(`+`, acc, res$e2),
+#                       result_list, init = SSE_cum)
+
+# need to square the errors first
+SSE_cum <- Reduce(
+  function(acc, res) {
+    e_flat <- flatten_e_list(res$e)
+    Map(function(x, y) x + y^2, acc, e_flat[ names(acc) ])   # element-wise matrix addition
+  },
+  result_list,
+  init = SSE_cum
+)
+
+  
+# W_shr_store <- sapply(result_list, `[[`, "W_shr")
+# W_n_store <- t(sapply(result_list, `[[`, "W_n")) ; colnames(W_n_store) <- c("lambda", "delta")
+
+MSE <- lapply(SSE_cum, function(mat) mat / M)
+```
+
+
+
+# Evaluation
+
+## Average plots
+
+```{r}
+MSE_ts <- transform_sim_MSE(MSE, F)
+
+# MSE plot
+MSE_ts |> group_by(.model, h) |>
+  summarise(mse = mean(MSE)) |>
+  filter(.model != "mint_sample") %>% 
+  ggplot(aes(x = h, y = mse, color = .model)) +
+    geom_line() +
+    labs(x = "Horizon", y = "MSE") +
+    theme_minimal()
+
+# % improv plot
+MSE_ts |>
+  # filter models
+  # filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
+  # filter(!grepl("K10|K20", .model)) |>
+  filter(grepl("mint_n", .model)) |>
+  group_by(series, h) |>
+  mutate(
+    base_MSE = MSE[.model == "mint_n"]
+  ) |>
+  ungroup() |>
+  group_by(.model, h) |>
+  summarise(
+    MSE = mean(MSE),
+    base_MSE = mean(base_MSE),
+    pct_change = (MSE - base_MSE) / base_MSE * 100
+  ) |>
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+  geom_line() +
+  labs(x = "Horizon", y = "% improvements",
+       title = "% relative improvements in MSE compared to Base",
+       subtitle = "training size = 120, iterations = 96") +
+  theme_minimal()
+```
+
+```{r}
+improv_overtime <- matrix(0, 96, length(all_model_names),
+  dimnames = list(1:96, all_model_names)
+)
+
+for (i in 1:96) {
+  res <- result_list[[i]]
+  for (model in model_names) {
+    if (model == "base")
+      improv_overtime[i, model] <- mean(res$e2[[model]][1,])
+    else
+      improv_overtime[i, model] <- (mean(res$e2[[model]][1,]) - improv_overtime[i, "base"]) / improv_overtime[i, "base"] * 100
+  }
+}
+
+improv_overtime[, 2:4] |>            # keep the three models
+  as.data.frame() |>
+  cbind(Month = seq_dates$end) %>% 
+  pivot_longer(-Month,
+               names_to  = "model",
+               values_to = "pct_improve") %>% 
+  ggplot(aes(x = Month, y = pct_improve, color = model)) +
+    geom_line() +
+    labs(x = "Month", y = "% improvements",
+         title = "% relative improvements in average error squared compared to Base for each iteration") +
+    theme_minimal()
+
+```
+
+
+## At each level
+
+```{r}
+series <- rownames(S)
+
+level_index <- set_names(
+  vector("list", 8),
+  c(
+    "Australia", "State", "Zone", "Region",
+    "Australia_by_Purpose", "State_by_Purpose", 
+    "Zone_by_Purpose", "Region_by_Purpose"
+  )  
+)
+level_index$Australia <- which(series == "Total")
+level_index$State <- which(series %in% names(state_map))
+level_index$Zone <- which(series %in% names(zone_map))
+level_index$Region <- which(series %in% unlist(state_map, use.names = F))
+
+# find indices for series by purpose
+series_split <- strsplit(series, " - ")
+purposes <- c("Business", "Holiday", "Visiting friends and relatives", "Other reason")
+level_index$Australia_by_Purpose <- which(series %in% purposes)
+level_index$State_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% names(state_map))
+)
+level_index$Zone_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% names(zone_map))
+)
+level_index$Region_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% unlist(state_map, use.names = F))
+)
+
+
+# similar to for key, value in dict.items() in Python
+level_map <- imap(level_index, function(value, key){
+  set_names(rep(key, length(value)), series[value])
+}) %>% 
+  flatten_chr()
+```
+
+```{r}
+# MSE at each level
+MSE_ts <- MSE_ts %>% 
+  mutate(
+    level = level_map[series] %||% NA_character_ 
+    # %||% is just “if lookup returns NULL, fall back to NA
+  )
+
+# % improv plot by level
+MSE_ts |>
+  # # # filter models
+  # filter(!grepl("K10|K20", .model)) |>
+  # filter(!grepl("mint_shr", .model)) |> 
+  # filter(.model == "base" | grepl("K1", .model)) |>
+  filter(.model %in% c("base", "ols", "mint_n", "mint_shr")) |>
+  group_by(series, h) |>
+  mutate(
+    base_MSE = MSE[.model == "base"]
+  ) |>
+  ungroup() |>
+  group_by(.model, level, h) |>
+  summarise(
+    MSE = mean(MSE),
+    base_MSE = mean(base_MSE),
+    pct_change = (MSE - base_MSE) / base_MSE * 100
+  ) |>
+  filter(.model != "mint_sample") %>% 
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+    geom_line() +
+    labs(x = "Horizon", y = "% improvements",
+         title = "% relative improvements in MSE compared to Base") +
+    facet_wrap(~ level, ncol=2, scales = "free_y") +
+    theme_minimal()
+```
+
