@@ -1,3 +1,4 @@
+@ -1,199 +0,0 @@
 ---
 title: "read_results_cluster"
 editor_options: 
@@ -31,7 +32,7 @@ S <- readRDS("tourism/data/S.rds")
 row_names <- readRDS("tourism/data/row_names.rds")
 seq_dates <- readRDS("tourism/job/seq_dates.rds")
 
-path <- "tourism/job/results/"
+path <- "tourism/job/results_run1/"
 M <- 156
 result_list <- list()
 for (i in 1:M) {
@@ -90,7 +91,8 @@ MSE_ts |>
   ggplot(aes(x = h, y = pct_change, color = .model)) +
   geom_line() +
   labs(x = "Horizon", y = "% improvements",
-       title = "% relative improvements in MSE compared to Base") +
+       title = "% relative improvements in MSE compared to Base",
+       subtitle = "training size = 97, 120 iterations") +
   theme_minimal()
 ```
 
@@ -196,4 +198,3 @@ MSE_ts |>
     facet_wrap(~ level, ncol=2, scales = "free_y") +
     theme_minimal()
 ```
-
