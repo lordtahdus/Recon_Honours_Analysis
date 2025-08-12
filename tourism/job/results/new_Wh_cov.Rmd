@@ -57,9 +57,9 @@ save(model_list, file = paste0(path, "model_list.rds"))
 
 ```{r}
 # New Covs
-# 1. _s Scaled:
+# 1. _sv Scale Variance:
 #     Cov construct by 1-step-ahead Cor and pre- and post-multiply with variances of h-step-ahead
-# 2. _hcov Using h-step Cov:
+# 2. _hcov Direct h-step Covariance:
 #     Cov construct directly from h-step-ahead residuals
 
 i <- 133
@@ -116,13 +116,13 @@ shr_lambda <- result$W_shr[[1]]
 n_lambda <- result$W_n["lambda", 1]
 n_delta <- result$W_n["delta", 1]
 
-W_shr_s_1 <- shrinkage_est(
+W_shr_sv_1 <- shrinkage_est(
   y - y_hat_1,
   lambda = shr_lambda,
   zero_mean = TRUE
 )
 
-W_n_s_1 <- novelist_est(
+W_n_sv_1 <- novelist_est(
   y - y_hat_1,
   delta = n_delta,
   lambda = n_lambda,
@@ -137,16 +137,16 @@ e <- setNames(
     matrix(0, h, length(rownames(S)), dimnames = list(1:h, rownames(S)))
   }),
   c(
-    "mint_shr_s",
-    "mint_n_s",
+    "mint_shr_sv",
+    "mint_n_sv",
     "mint_shr_hcov",
     "mint_n_hcov"
   )
 )
 
 # 1-step-ahead error is the same with original for all 4 methods
-e[["mint_shr_s"]][1, ] <- e[["mint_shr_hcov"]][1, ] <- result$e$mint_shr[1, ]
-e[["mint_n_s"]][1, ] <- e[["mint_n_hcov"]][1, ] <- result$e$mint_n[1, ]
+e[["mint_shr_sv"]][1, ] <- e[["mint_shr_hcov"]][1, ] <- result$e$mint_shr[1, ]
+e[["mint_n_sv"]][1, ] <- e[["mint_n_hcov"]][1, ] <- result$e$mint_n[1, ]
 
 for (h_i in 2:h) {
 
@@ -180,8 +180,8 @@ for (h_i in 2:h) {
   # 1) Scaled-correlation --------------------------
 
   # convert to correlation then pre-multiply and post-multiply with D_half_h
-  W_shr_s_h <- D_half_h %*% cov2cor(W_shr_s_1$cov) %*% D_half_h
-  W_n_s_h <- D_half_h %*% cov2cor(W_n_s_1$cov) %*% D_half_h
+  W_shr_sv_h <- D_half_h %*% cov2cor(W_shr_s_1$cov) %*% D_half_h
+  W_n_sv_h <- D_half_h %*% cov2cor(W_n_s_1$cov) %*% D_half_h
 
   # 2) Direct h-step covariance ----------------------
   W_shr_hcov_h <- shrinkage_est(
@@ -197,18 +197,19 @@ for (h_i in 2:h) {
     S,
     window = window,
     deltas = seq(0, 1, by = 0.05),
+    h = h_i,
     ensure_PD = TRUE, message = FALSE
   )
 
   # reconcile
-  recon_shr_s_h <- reconcile_mint(base_fc_h, S, W_shr_s_h)
-  recon_n_s_h <- reconcile_mint(base_fc_h, S, W_n_s_h)
+  recon_shr_sv_h <- reconcile_mint(base_fc_h, S, W_shr_sv_h)
+  recon_n_sv_h <- reconcile_mint(base_fc_h, S, W_n_sv_h)
   recon_shr_hcov_h <- reconcile_mint(base_fc_h, S, W_shr_hcov_h$cov)
   recon_n_hcov_h <- reconcile_mint(base_fc_h, S, W_n_hcov_h$cov)
 
   # error 
-  e[["mint_shr_s"]][h_i, ] <- actual_h - recon_shr_s_h
-  e[["mint_n_s"]][h_i, ] <- actual_h - recon_n_s_h
+  e[["mint_shr_sv"]][h_i, ] <- actual_h - recon_shr_sv_h
+  e[["mint_n_sv"]][h_i, ] <- actual_h - recon_n_sv_h
   e[["mint_shr_hcov"]][h_i, ] <- actual_h - recon_shr_hcov_h
   e[["mint_n_hcov"]][h_i, ] <- actual_h - recon_n_hcov_h
 }
