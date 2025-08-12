@@ -11,9 +11,9 @@ editor_options:
 library(tidyr)
 library(ggplot2)
 
-# library(fabletools)
-# library(fable)
-# library(feasts)
+library(fabletools)
+library(fable)
+library(feasts)
 library(tsibble)
 library(dplyr)
 
@@ -121,10 +121,10 @@ MSE_ts |>
   # filter models
   # filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
   # filter(!grepl("K10|K20", .model)) |>
-  filter(grepl("mint_n", .model)) |>
+  # filter(grepl("mint_n", .model)) |>
   group_by(series, h) |>
   mutate(
-    base_MSE = MSE[.model == "mint_n"]
+    base_MSE = MSE[.model == "base"]
   ) |>
   ungroup() |>
   group_by(.model, h) |>
