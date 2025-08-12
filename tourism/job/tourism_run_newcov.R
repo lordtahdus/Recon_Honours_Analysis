@@ -22,8 +22,6 @@ seq_dates <- readRDS("tourism/job/seq_dates.rds")
 args  <- commandArgs(trailingOnly = TRUE)
 index <- as.integer(args[1])
 
-start_month <- seq_dates$start[index]
-end_month <- seq_dates$end[index]
 
 # New Covs
 # 1. _sv Scale Variance:
@@ -31,16 +29,17 @@ end_month <- seq_dates$end[index]
 # 2. _hcov Direct h-step Covariance:
 #     Cov construct directly from h-step-ahead residuals
 
-path <- "tourism/job/results"
+path <- "tourism/job/results/"
 result <- readRDS(paste0(path, "result_", index, ".rds"))
+h <- 12
 
+# START ------------------------------------------
 fit <- result$base_fit
 
-h <- 12
 fc <- fit |>
   forecast(h = h)
 
-# 1. Cov construct by 1-step-ahead Cor and pre- and post-multiply with variances of h-step-ahead
+# Get 1-step-ahead fitted values and residuals
 fit_augment_1 <- augment(fit, h = 1) |> 
   filter(.model == "base") |> 
   left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) |> 
@@ -69,7 +68,7 @@ base_fc <- fc |>
   select(-Month) |>
   as.matrix()
 
-end <- seq_dates$end[i]
+end <- seq_dates$end[index]
 actual <- visnights_full |>
   filter(Month > end & Month <= end + 12) |>
   as_tibble() |>
@@ -78,6 +77,7 @@ actual <- visnights_full |>
   pivot_wider(names_from = name, values_from = Nights) |>
   select(-Month) |>
   as.matrix()
+
 actual <- actual[, rownames(S)]
 
 # get original shrinkage and novelist covariance matrices
@@ -90,7 +90,6 @@ W_shr_sv_1 <- shrinkage_est(
   lambda = shr_lambda,
   zero_mean = TRUE
 )
-
 W_n_sv_1 <- novelist_est(
   y - y_hat_1,
   delta = n_delta,
@@ -98,7 +97,6 @@ W_n_sv_1 <- novelist_est(
   zero_mean = TRUE,
   ensure_PD = TRUE
 )
-
 
 # initialise the error matrices
 e <- setNames(
@@ -138,13 +136,12 @@ for (h_i in 2:h) {
   y_hat_h <- y_hat_h[(na_length + 1):nrow(y_hat_h), , drop = FALSE] # remove the first `na_length` rows
 
   base_fc_h <- base_fc[h_i, , drop = FALSE] # a row vector of the h-step-ahead forecasts
-  actual_h <- actual[h_i, , drop = FALSE] # a row vector of the h-step-ahead actuals
+  actual_h <- actual[h_i, , drop = FALSE]
 
   # variance of h-step-ahead in-sample residuals
-  # diagonal matrix
   D_half_h <- diag(sqrt(diag(
     compute_cov_matrix(y_h - y_hat_h, zero_mean = TRUE)
-  )))
+  ))) # diagonal matrix
 
   # 1) Scaled-correlation --------------------------
 
@@ -158,8 +155,7 @@ for (h_i in 2:h) {
     zero_mean = TRUE
   )
   
-  # window <- round(dim(y)[1] * 0.7)
-  window <- round(nrow(y_h)-2)
+  window <- round(nrow(y_hat_h) * 0.7)
   # NOVELIST estimator with and without PC adjustment
   W_n_hcov_h <- novelist_cv(
     y_h, y_hat_h,
@@ -182,3 +178,11 @@ for (h_i in 2:h) {
   e[["mint_shr_hcov"]][h_i, ] <- actual_h - recon_shr_hcov_h
   e[["mint_n_hcov"]][h_i, ] <- actual_h - recon_n_hcov_h
 }
+
+# END ------------------------------------------
+
+# append to error list in result
+result$e <- c(result$e, e)
+
+file <- paste0(path, "result_", index, ".rds")
+saveRDS(result, file = file)

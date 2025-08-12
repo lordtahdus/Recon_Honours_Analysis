@@ -62,7 +62,7 @@ save(model_list, file = paste0(path, "model_list.rds"))
 # 2. _hcov Direct h-step Covariance:
 #     Cov construct directly from h-step-ahead residuals
 
-i <- 133
+i <- 1
 result <- readRDS(paste0(path, "result_", i, ".rds"))
 
 fit <- result$base_fit
@@ -180,8 +180,8 @@ for (h_i in 2:h) {
   # 1) Scaled-correlation --------------------------
 
   # convert to correlation then pre-multiply and post-multiply with D_half_h
-  W_shr_sv_h <- D_half_h %*% cov2cor(W_shr_s_1$cov) %*% D_half_h
-  W_n_sv_h <- D_half_h %*% cov2cor(W_n_s_1$cov) %*% D_half_h
+  W_shr_sv_h <- D_half_h %*% cov2cor(W_shr_sv_1$cov) %*% D_half_h
+  W_n_sv_h <- D_half_h %*% cov2cor(W_n_sv_1$cov) %*% D_half_h
 
   # 2) Direct h-step covariance ----------------------
   W_shr_hcov_h <- shrinkage_est(
@@ -190,7 +190,7 @@ for (h_i in 2:h) {
   )
   
   # window <- round(dim(y)[1] * 0.7)
-  window <- round(nrow(y_h)-2)
+  window <- round(nrow(y_h)-h_i-1)
   # NOVELIST estimator with and without PC adjustment
   W_n_hcov_h <- novelist_cv(
     y_h, y_hat_h,
@@ -214,5 +214,8 @@ for (h_i in 2:h) {
   e[["mint_n_hcov"]][h_i, ] <- actual_h - recon_n_hcov_h
 }
 
+# append to error list in result
+# result$e is a list of matrices
+result$e <- c(result$e, e)
 
 ```
