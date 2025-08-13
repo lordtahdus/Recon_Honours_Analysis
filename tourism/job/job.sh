@@ -4,7 +4,7 @@
 #SBATCH --error=tourism/job/logs/error_%A_%a.log
 #SBATCH --array=1-18,20-133
 #SBATCH --time=24:00:00
-#SBATCH --mem=4G
+#SBATCH --mem=2G
 #SBATCH --cpus-per-task=1
 
 # exclude 19th iter since error in last run results

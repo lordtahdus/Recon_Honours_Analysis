@@ -184,5 +184,6 @@ for (h_i in 2:h) {
 # append to error list in result
 result$e <- c(result$e, e)
 
-file <- paste0(path, "result_", index, ".rds")
+new_path <- "tourism/job/results_newcov/"
+file <- paste0(new_path, "result_", index, ".rds")
 saveRDS(result, file = file)
