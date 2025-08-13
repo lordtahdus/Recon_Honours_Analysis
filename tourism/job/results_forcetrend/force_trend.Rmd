@@ -1,0 +1,107 @@
+---
+title: "read_results_cluster"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libs}
+# library(MASS)
+# library(matrixcalc)
+# library(Matrix)
+library(tidyr)
+library(ggplot2)
+
+library(fabletools)
+library(fable)
+library(feasts)
+library(tsibble)
+library(dplyr)
+library(lubridate)
+
+library(ReconCov)
+```
+
+
+# Read
+
+```{r}
+visnights_full <- readRDS("tourism/data/visnights_full.rds")
+S <- readRDS("tourism/data/S.rds")
+row_names <- readRDS("tourism/data/row_names.rds")
+seq_dates <- readRDS("tourism/job/seq_dates.rds")
+
+year_filter <- 2010
+
+# condition for top, state-, and purpose-level series
+cond_top_levels <- expr(
+    is_aggregated(State) | (is_aggregated(Zone) & is_aggregated(Purpose))
+)
+data_high <- visnights_full |>
+  filter(!!cond_top_levels)
+data_low <- visnights_full |>
+  filter(!(!!cond_top_levels))
+
+# constraint: constant + d=1 for high-level series to force trend
+fit_high <- data_high |>
+  filter(year(Month) <= year_filter) |> 
+  model(base = ARIMA(
+    Nights, 
+    order_constraint = (constant == 1) & (d == 1)
+  ))
+
+fit_low <- data_low |>
+  filter(year(Month) <= year_filter) |> 
+  model(base = ARIMA(Nights))
+
+fit <- bind_rows(fit_high, fit_low)
+
+# base forecasts
+h <- 3
+fc <- fit %>% 
+  forecast(h = h)
+
+# Get data from fit
+fit_augment <- fit %>%
+  augment() %>%
+  filter(.model == "base") %>%
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) %>%
+  select(Month, State, Zone, Region, Purpose, name, .fitted, Nights)
+
+y_hat <- fit_augment %>%
+  as_tibble() %>%
+  select(.fitted, name, Month) %>%
+  pivot_wider(names_from = name, values_from = .fitted) %>%
+  select(-Month) %>%
+  as.matrix()
+
+y <- fit_augment %>%
+  as_tibble() %>%
+  select(Nights, name, Month) %>%
+  pivot_wider(names_from = name, values_from = Nights) %>%
+  select(-Month) %>%
+  as.matrix()
+
+base_fc <- fc %>%
+  as_tibble() %>%
+  filter(.model == "base") %>%
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) %>%
+  select(name, .mean, Month) %>%
+  pivot_wider(names_from = name, values_from = .mean) %>%
+  select(-Month) %>%
+  as.matrix()
+
+actual <- visnights_full %>%
+  filter(Month > end & Month <= end + 12) %>%
+  as_tibble() %>%
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) %>%
+  select(name, Nights, Month) %>%
+  pivot_wider(names_from = name, values_from = Nights) %>%
+  select(-Month) %>%
+  as.matrix()
+
+y <- y[, rownames(S)]
+y_hat <- y_hat[, rownames(S)]
+base_fc <- base_fc[, rownames(S)]
+actual <- actual[, rownames(S)]
+```
+
