@@ -146,8 +146,8 @@ for (h_i in 2:h) {
   # 1) Scaled-correlation --------------------------
 
   # convert to correlation then pre-multiply and post-multiply with D_half_h
-  W_shr_sv_h <- D_half_h %*% cov2cor(W_shr_s_1$cov) %*% D_half_h
-  W_n_sv_h <- D_half_h %*% cov2cor(W_n_s_1$cov) %*% D_half_h
+  W_shr_sv_h <- D_half_h %*% cov2cor(W_shr_sv_1$cov) %*% D_half_h
+  W_n_sv_h <- D_half_h %*% cov2cor(W_n_sv_1$cov) %*% D_half_h
 
   # 2) Direct h-step covariance ----------------------
   W_shr_hcov_h <- shrinkage_est(
