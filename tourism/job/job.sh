@@ -9,7 +9,7 @@
 
 # exclude 19th iter since error in last run results
 # Load the R module
-module load r/4.4.0-mkl
+module load R/4.4.0-mkl
 
 export R_LIBS_USER=~/yi61/tsuu0007/R/library
 
