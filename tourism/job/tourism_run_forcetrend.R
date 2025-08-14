@@ -37,14 +37,12 @@ run <- function(
 
   # constraint: constant + d=1 for high-level series to force trend
   fit_high <- data_high |>
-    filter(year(Month) <= year_filter) |> 
     model(base = ARIMA(
       Nights, 
       order_constraint = (constant == 1) & (d == 1)
     ))
 
   fit_low <- data_low |>
-    filter(year(Month) <= year_filter) |> 
     model(base = ARIMA(Nights))
 
   fit <- bind_rows(fit_high, fit_low)
