@@ -1,0 +1,195 @@
+---
+title: "read_results_cluster"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libs}
+# library(MASS)
+# library(matrixcalc)
+# library(Matrix)
+library(tidyr)
+library(ggplot2)
+
+library(fabletools)
+library(fable)
+library(feasts)
+library(tsibble)
+library(dplyr)
+
+# library(devtools)
+# load_all()
+library(ReconCov)
+library(purrr)
+```
+
+
+# Read
+
+```{r}
+S <- readRDS("tourism/data/S.rds")
+row_names <- readRDS("tourism/data/row_names.rds")
+seq_dates <- readRDS("tourism/job/seq_dates.rds")
+
+path <- "D:/Github/tourism_cluster/results/"
+path_forcetrend <- "D:/Github/tourism_cluster/results_forcetrend/" # results with new cov
+
+start <- 98
+M <- 12
+
+result_list <- list()
+for (i in start:(start + M - 1)) {
+  result <- readRDS(paste0(path, "result_", i, ".rds"))
+  result$e <- result$e[!grepl("_pc", result$e |> names())] # remove the pc models
+  result$e <- c(
+    result$e,
+    readRDS(paste0(path_forcetrend, "result_", i, ".rds"))$e
+  ) # add forcetrend models
+  result_list[[i]] <- result[-3] # not taking the base fitted models
+}
+result_list <- result_list[start:(start + M - 1)] # truncate to first 120 iterations
+
+all_model_names <- names(result_list[[1]]$e)
+
+
+h <- 12
+# model_names <- c("base", "ols", "mint_shr", "mint_n")
+SSE_cum <- setNames(
+  lapply(all_model_names, function(name) {
+    matrix(0, h, length(rownames(S)), dimnames = list(1:h, rownames(S)))
+  }),
+  all_model_names
+)
+# wrangle
+# SSE_cum <- Reduce(function(acc, res) Map(`+`, acc, res$e2),
+#                       result_list, init = SSE_cum)
+
+# need to square the errors first
+SSE_cum <- Reduce(
+  function(acc, res) Map(function(x, y) x + y^2, acc, res$e),
+  result_list, 
+  init = SSE_cum
+)
+
+MSE <- lapply(SSE_cum, function(mat) mat / M)
+```
+
+
+```{r}
+MSE_ts <- transform_sim_MSE(MSE, F)
+
+# MSE plot
+MSE_ts |> group_by(.model, h) |>
+  summarise(mse = mean(MSE)) |>
+  filter(.model != "mint_sample") %>% 
+  ggplot(aes(x = h, y = mse, color = .model)) +
+    geom_line() +
+    labs(x = "Horizon", y = "MSE") +
+    theme_minimal()
+
+# % improv plot
+MSE_ts |>
+  group_by(series, h) |>
+  mutate(
+    base_MSE = MSE[.model == "base"]
+  ) |>
+  ungroup() |>
+  group_by(.model, h) |>
+  summarise(
+    MSE = mean(MSE),
+    base_MSE = mean(base_MSE),
+    pct_change = (MSE - base_MSE) / base_MSE * 100
+  ) |>
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+  geom_line() +
+  labs(x = "Horizon", y = "% improvements",
+       title = "% relative improvements in MSE compared to Base",
+       subtitle = "training size = 120, iterations = 96") +
+  theme_minimal()
+```
+
+
+## At each level
+
+```{r}
+series <- rownames(S)
+
+level_index <- set_names(
+  vector("list", 8),
+  c(
+    "Australia", "State", "Zone", "Region",
+    "Australia_by_Purpose", "State_by_Purpose", 
+    "Zone_by_Purpose", "Region_by_Purpose"
+  )  
+)
+level_index$Australia <- which(series == "Total")
+level_index$State <- which(series %in% names(state_map))
+level_index$Zone <- which(series %in% names(zone_map))
+level_index$Region <- which(series %in% unlist(state_map, use.names = F))
+
+# find indices for series by purpose
+series_split <- strsplit(series, " - ")
+purposes <- c("Business", "Holiday", "Visiting friends and relatives", "Other reason")
+level_index$Australia_by_Purpose <- which(series %in% purposes)
+level_index$State_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% names(state_map))
+)
+level_index$Zone_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% names(zone_map))
+)
+level_index$Region_by_Purpose <- which(
+  sapply(series_split, function(x) length(x) == 2 && 
+         x[1] %in% unlist(state_map, use.names = F))
+)
+
+# similar to for key, value in dict.items() in Python
+level_map <- imap(level_index, function(value, key){
+  set_names(rep(key, length(value)), series[value])
+}) %>% 
+  flatten_chr()
+```
+
+```{r}
+library(stringr)
+desired_order <- c(
+  "Australia", "Australia_by_Purpose",
+  "State",     "State_by_Purpose",
+  "Zone",      "Zone_by_Purpose",
+  "Region",    "Region_by_Purpose"
+)
+# MSE at each level
+MSE_ts <- MSE_ts %>% 
+  mutate(
+    level = level_map[series] %||% NA_character_,
+    # %||% is just “if lookup returns NULL, fall back to NA
+    level = factor(
+      level,
+      levels = desired_order,
+      labels = str_replace_all(desired_order, "_", " ")  # replace "_" with " "
+    )
+  )
+
+# % improv plot by level
+MSE_ts |>
+  group_by(series, h) |>
+  mutate(
+    base_MSE = MSE[.model == "base"]
+  ) |>
+  ungroup() |>
+  group_by(.model, level, h) |>
+  summarise(
+    MSE = mean(MSE),
+    base_MSE = mean(base_MSE),
+    pct_change = (MSE - base_MSE) / base_MSE * 100
+  ) |>
+  filter(.model != "mint_sample") %>% 
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+    geom_line() +
+    labs(x = "Horizon", y = "% improvements",
+         title = "% relative improvements in MSE compared to Base") +
+    facet_wrap(~ level, ncol=2, scales = "free_y") +
+    theme_minimal()
+```
+
