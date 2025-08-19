@@ -35,14 +35,14 @@ path <- "D:/Github/tourism_cluster/results/" # new results
 
 M <- 133
 
-result_list <- list()
+result_list_full <- list()
 for (i in 1:M) {
   if (i == 19) next # iteration 19 has error
   result <- readRDS(paste0(path, "result_", i, ".rds")) 
   # result_list[[i]] <- result
-  result_list[[i]] <- result[-3] # not taking the base fitted models
+  result_list_full[[i]] <- result[-3] # not taking the base fitted models
 }
-result_list <- result_list[-19]
+result_list <- result_list_full[-19]
 
 # remove the last 3 years of results
 M <- M - 3*12 - 1 # -1 for the removed iteration 19
@@ -110,7 +110,7 @@ MSE_ts <- transform_sim_MSE(MSE, F)
 # MSE plot
 MSE_ts |> group_by(.model, h) |>
   summarise(mse = mean(MSE)) |>
-  filter(.model != "mint_sample") %>% 
+  filter(.model != "mint_sample") |> 
   ggplot(aes(x = h, y = mse, color = .model)) +
     geom_line() +
     labs(x = "Horizon", y = "MSE") +
@@ -158,10 +158,10 @@ for (i in 1:96) {
 
 improv_overtime[, 2:4] |>            # keep the three models
   as.data.frame() |>
-  cbind(Month = seq_dates$end) %>% 
+  cbind(Month = seq_dates$end) |> 
   pivot_longer(-Month,
                names_to  = "model",
-               values_to = "pct_improve") %>% 
+               values_to = "pct_improve") |> 
   ggplot(aes(x = Month, y = pct_improve, color = model)) +
     geom_line() +
     labs(x = "Month", y = "% improvements",
@@ -210,13 +210,13 @@ level_index$Region_by_Purpose <- which(
 # similar to for key, value in dict.items() in Python
 level_map <- imap(level_index, function(value, key){
   set_names(rep(key, length(value)), series[value])
-}) %>% 
+}) |> 
   flatten_chr()
 ```
 
 ```{r}
 # MSE at each level
-MSE_ts <- MSE_ts %>% 
+MSE_ts <- MSE_ts |> 
   mutate(
     level = level_map[series] %||% NA_character_ 
     # %||% is just “if lookup returns NULL, fall back to NA
@@ -240,7 +240,7 @@ MSE_ts |>
     base_MSE = mean(base_MSE),
     pct_change = (MSE - base_MSE) / base_MSE * 100
   ) |>
-  filter(.model != "mint_sample") %>% 
+  filter(.model != "mint_sample") |> 
   ggplot(aes(x = h, y = pct_change, color = .model)) +
     geom_line() +
     labs(x = "Horizon", y = "% improvements",
@@ -249,3 +249,142 @@ MSE_ts |>
     theme_minimal()
 ```
 
+# Probabilistic Evaluation
+
+```{r}
+library(distributional)
+winkler_score(dist_normal(), 1.2, 80)
+
+result$W_shr
+resid <- result$resid
+
+W_shr_lambdas <- result$W_shr[1:3]
+W_shr <- shrinkage_est(
+  resid,
+  W_shr_lambdas[1]
+)
+
+W <- W_shr$cov
+G <- solve(t(S) %*% solve(W) %*% S) %*% t(S) %*% solve(W)
+W_recon <- S %*% G %*% W %*% t(G) %*% t(S)
+
+
+y <- visnights_full |> 
+  as_tibble() |> 
+  arrange(State, Region) |>
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) |>
+  select(name, Nights, Month) |>
+  pivot_wider(names_from = name, values_from = Nights) |>
+  select(-Month) |>
+  as.matrix()
+y <- y[, rownames(S)]
+
+actual <- y[seq_dates$end[i] + 1 - start_date + 1, ] # 1-step ahead actuals
+base_fc <- actual - result$e$mint_shr[1, ] # 1-step ahead base forecast
+y_recon <- as.numeric(S %*% G %*% base_fc)
+names(y_recon) <- rownames(S)
+
+winkler_score(dist_normal(), 1.2, 80)
+
+sapply(
+  rownames(S),
+  function(series) {
+    winkler_score(
+      dist_normal(y_recon[series], sqrt(W_recon[series, series])),
+      actual[series],
+      80
+    )
+  }
+)
+
+# apply winkler score to each series
+
+
+```
+
+
+```{r}
+interval <- 80 # confidence interval for Winkler score
+M <- length(result_list_full)
+
+# List of Winkler scores for each model
+#   row - CV iterations
+#   col - series
+all_model_names <- all_model_names[!grepl("K5|K10|K20", all_model_names)] # remove pc models
+result_winklers <- setNames(
+  lapply(all_model_names, function(name) {
+    matrix(0, M, length(rownames(S)), dimnames = list(1:M, rownames(S)))
+  }),
+  all_model_names
+)
+
+# Get actual data
+y <- visnights_full |> 
+  as_tibble() |> 
+  arrange(State, Region) |>
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) |>
+  select(name, Nights, Month) |>
+  pivot_wider(names_from = name, values_from = Nights) |>
+  select(-Month) |>
+  as.matrix()
+y <- y[, rownames(S)]
+
+vectorise_winkler <- function(mu, sd, actual, interval) {
+  sapply(
+    rownames(S),
+    function(series) winkler_score(
+      dist_normal(mu[series], sd[series]),
+      actual[series],
+      interval
+    )
+  )
+}
+
+for (i in 1:M) {
+  if (i == 19) next # iteration 19 has error
+  result <- result_list_full[[i]]
+  resid <- result$resid
+
+  actual <- y[seq_dates$end[i] + 1 - start_date + 1, ] # 1-step ahead actuals
+  base_fc <- actual - result$e$base[1, ] # 1-step ahead base forecast
+
+  # Create a list of W1_hat for each model
+  W1_hats <- list()
+  W1_hats[["base"]] <- cov(resid) # sample variance of 1-step-ahead residuals as a proxy
+  W1_hats[["ols"]] <- W1_hats[["base"]]
+  W1_hats[["mint_shr"]] <- shrinkage_est(resid, result$W_shr[1])$cov
+  W1_hats[["mint_n"]] <- novelist_est(resid, result$W_n["delta", 1], result$W_n["lambda", 1])$cov
+  rownames(W1_hats[["mint_n"]]) <- colnames(W1_hats[["mint_n"]]) <- rownames(S)
+  W1_hats[["mint_shr_pc_K1"]] <- shrinkage_pc_est(resid, 1, result$W_shr[2])$cov
+  W1_hats[["mint_shr_pc_K2"]] <- shrinkage_pc_est(resid, 2, result$W_shr[3])$cov
+  W1_hats[["mint_n_pc_K1"]] <- novelist_pc_est(resid, 1, result$W_n["delta", 2], result$W_n["lambda", 2])$cov
+  W1_hats[["mint_n_pc_K2"]] <- novelist_pc_est(resid, 2, result$W_n["delta", 3], result$W_n["lambda", 3])$cov
+
+  for (model in all_model_names) {
+    if (model == "base") {
+      # Winkler score for base model
+      result_winklers[[model]][i, ] <- vectorise_winkler(
+        base_fc, sqrt(diag(W1_hats[["base"]])), actual, interval
+      )
+    } else {
+      # obtain mapping G
+      if (model == "ols") {
+        G <- solve(t(S) %*% S) %*% t(S)
+      } else {
+        P <- t(S) %*% solve(W1_hats[[model]])
+        G <- solve(P %*% S) %*% P
+      }
+      # get reconciled forecast and covariance
+      y_recon <- as.numeric(S %*% G %*% base_fc)
+      names(y_recon) <- rownames(S)
+      W1_recon <- S %*% G %*% W1_hats[[model]] %*% t(G) %*% t(S)
+
+      # Winkler score for reconciled model
+      result_winklers[[model]][i, ] <- vectorise_winkler(
+        y_recon, sqrt(diag(W1_recon)), actual, interval
+      )
+    }
+  }
+}
+
+```
