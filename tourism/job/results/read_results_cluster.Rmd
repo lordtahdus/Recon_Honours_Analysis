@@ -388,3 +388,13 @@ for (i in 1:M) {
 }
 
 ```
+
+
+```{r}
+# check 0s at 19th row
+if (all(sapply(result_winklers, function(mat) all(mat[19, ] == 0)))) {
+  # remove 19th row
+  result_winklers <- lapply(result_winklers, function(mat) mat[-19, ])
+}
+
+```
