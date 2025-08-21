@@ -263,6 +263,8 @@ MSE_ts |>
 
 # Probabilistic Evaluation
 
+## Get winklers score
+
 ```{r}
 library(distributional)
 
@@ -307,12 +309,12 @@ vectorise_winkler <- function(mu, sd, actual, interval) {
 for (i in 1:M) {
   if (i == 19) next # iteration 19 has error
   result <- result_list_full[[i]]
+  result$e <- flatten_e_list(result$e) # flatten the list of errors
   resid <- result$resid
 
   actual <- y[seq_dates$end[i] + 1 - start_date + 1, ] # 1-step ahead actuals
-  base_fc <- actual - result$e$base[1, ] # 1-step ahead base forecast
 
-  # Create a list of W1_hat for each model
+  # Recover a list of W1_hat for each model
   W1_hats <- list()
   W1_hats[["base"]] <- cov(resid) # sample variance of 1-step-ahead residuals as a proxy
   W1_hats[["ols"]] <- W1_hats[["base"]]
@@ -326,6 +328,7 @@ for (i in 1:M) {
 
   for (model in all_model_names) {
     if (model == "base") {
+      base_fc <- actual - result$e$base[1, ] # recover 1-step ahead base forecast
       # Winkler score for base model
       result_winklers[[model]][i, ] <- vectorise_winkler(
         base_fc, sqrt(diag(W1_hats[["base"]])), actual, interval
@@ -339,8 +342,7 @@ for (i in 1:M) {
         G <- solve(P %*% S) %*% P
       }
       # get reconciled forecast and covariance
-      y_recon <- as.numeric(S %*% G %*% base_fc)
-      names(y_recon) <- rownames(S)
+      y_recon <- actual - result$e[[model]][1, ]
       W1_recon <- S %*% G %*% W1_hats[[model]] %*% t(G) %*% t(S)
 
       # Winkler score for reconciled model
@@ -363,7 +365,7 @@ if (all(sapply(result_winklers, function(mat) all(mat[19, ] == 0)))) {
 ```{r}
 library(stringr)
 
-winklers_df <- result_winklers_95 |> 
+winklers_df <- result_winklers |> 
   transform_sim_MSE(F) |> 
   # change column name "h" to "iter", "MSE" to "score"
   rename(iter = h, score = MSE)
@@ -379,6 +381,10 @@ winklers_df <- winklers_df %>%
       labels = str_replace_all(desired_order, "_", " ")  # replace "_" with " "
     )
   )
+
+# filter last 3 years
+winklers_df <- winklers_df %>%
+  filter(iter <= M - 12*3 - 1) # keep only the first M iterations
 
 # winklers per model
 winklers_df |> 
