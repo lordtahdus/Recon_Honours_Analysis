@@ -30,6 +30,7 @@ library(purrr)
 S <- readRDS("tourism/data/S.rds")
 row_names <- readRDS("tourism/data/row_names.rds")
 seq_dates <- readRDS("tourism/job/seq_dates.rds")
+visnights_full <- readRDS("tourism/data/visnights_full.rds")
 
 path <- "D:/Github/tourism_cluster/results/" # new results
 
@@ -296,6 +297,9 @@ y <- visnights_full |>
 y <- y[, rownames(S)]
 
 vectorise_winkler <- function(mu, sd, actual, interval) {
+  if (length(mu) == 0 || length(sd) == 0) {
+    stop("mu or sd empty")
+  }
   sapply(
     rownames(S),
     function(series) winkler_score(
@@ -306,7 +310,8 @@ vectorise_winkler <- function(mu, sd, actual, interval) {
   )
 }
 
-for (i in 1:M) {
+start_date <- seq_dates$start[1]
+
   if (i == 19) next # iteration 19 has error
   result <- result_list_full[[i]]
   result$e <- flatten_e_list(result$e) # flatten the list of errors
@@ -321,6 +326,7 @@ for (i in 1:M) {
   W1_hats[["mint_shr"]] <- shrinkage_est(resid, result$W_shr[1])$cov
   W1_hats[["mint_n"]] <- novelist_est(resid, result$W_n["delta", 1], result$W_n["lambda", 1])$cov
   rownames(W1_hats[["mint_n"]]) <- colnames(W1_hats[["mint_n"]]) <- rownames(S)
+  # pc models
   W1_hats[["mint_shr_pc_K1"]] <- shrinkage_pc_est(resid, 1, result$W_shr[2])$cov
   W1_hats[["mint_shr_pc_K2"]] <- shrinkage_pc_est(resid, 2, result$W_shr[3])$cov
   W1_hats[["mint_n_pc_K1"]] <- novelist_pc_est(resid, 1, result$W_n["delta", 2], result$W_n["lambda", 2])$cov
@@ -347,7 +353,7 @@ for (i in 1:M) {
 
       # Winkler score for reconciled model
       result_winklers[[model]][i, ] <- vectorise_winkler(
-        y_recon, sqrt(diag(W1_recon)), actual, interval
+        mu = y_recon, sd = sqrt(diag(W1_recon)), actual, interval
       )
     }
   }
