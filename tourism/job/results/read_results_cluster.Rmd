@@ -264,13 +264,12 @@ MSE_ts |>
 
 # Probabilistic Evaluation
 
-## Get winklers score
+## Get winkler & CRPS score
 
 ```{r}
 library(distributional)
 
 
-interval <- 95 # confidence interval for Winkler score
 M <- length(result_list_full)
 
 
@@ -278,12 +277,14 @@ M <- length(result_list_full)
 #   row - CV iterations
 #   col - series
 all_model_names <- all_model_names[!grepl("K5|K10|K20", all_model_names)] # remove pc models
-result_winklers <- setNames(
+result_winklers_80 <- setNames(
   lapply(all_model_names, function(name) {
     matrix(0, M, length(rownames(S)), dimnames = list(1:M, rownames(S)))
   }),
   all_model_names
 )
+result_winklers_95 <- result_winklers_80
+result_cprs <- result_winklers_80
 
 # Get actual data
 y <- visnights_full |> 
@@ -310,8 +311,23 @@ vectorise_winkler <- function(mu, sd, actual, interval) {
   )
 }
 
+vectorise_crps <- function(mu, sd, actual) {
+  if (length(mu) == 0 || length(sd) == 0) {
+    stop("mu or sd empty")
+  }
+  sapply(
+    rownames(S),
+    function(series) CRPS(
+      dist_normal(mu[series], sd[series]),
+      actual[series]
+    )
+  )
+}
+
 start_date <- seq_dates$start[1]
 
+for (i in 1:M) {
+  
   if (i == 19) next # iteration 19 has error
   result <- result_list_full[[i]]
   result$e <- flatten_e_list(result$e) # flatten the list of errors
@@ -335,10 +351,19 @@ start_date <- seq_dates$start[1]
   for (model in all_model_names) {
     if (model == "base") {
       base_fc <- actual - result$e$base[1, ] # recover 1-step ahead base forecast
+
       # Winkler score for base model
-      result_winklers[[model]][i, ] <- vectorise_winkler(
-        base_fc, sqrt(diag(W1_hats[["base"]])), actual, interval
+      result_winklers_80[[model]][i, ] <- vectorise_winkler(
+        base_fc, sqrt(diag(W1_hats[["base"]])), actual, 80
       )
+      result_winklers_95[[model]][i, ] <- vectorise_winkler(
+        base_fc, sqrt(diag(W1_hats[["base"]])), actual, 0.95
+      )
+      # CRPS for base model
+      result_cprs[[model]][i, ] <- vectorise_crps(
+        base_fc, sqrt(diag(W1_hats[["base"]])), actual
+      )
+
     } else {
       # obtain mapping G
       if (model == "ols") {
@@ -352,26 +377,39 @@ start_date <- seq_dates$start[1]
       W1_recon <- S %*% G %*% W1_hats[[model]] %*% t(G) %*% t(S)
 
       # Winkler score for reconciled model
-      result_winklers[[model]][i, ] <- vectorise_winkler(
-        mu = y_recon, sd = sqrt(diag(W1_recon)), actual, interval
+      result_winklers_80[[model]][i, ] <- vectorise_winkler(
+        mu = y_recon, sd = sqrt(diag(W1_recon)), actual, 80
+      )
+      result_winklers_95[[model]][i, ] <- vectorise_winkler(
+        mu = y_recon, sd = sqrt(diag(W1_recon)), actual, 0.95
+      )
+      # CRPS for reconciled model
+      result_cprs[[model]][i, ] <- vectorise_crps(
+        mu = y_recon, sd = sqrt(diag(W1_recon)), actual
       )
     }
   }
 }
 
-# check 0s at 19th row
-if (all(sapply(result_winklers, function(mat) all(mat[19, ] == 0)))) {
-  # remove 19th row
-  result_winklers <- lapply(result_winklers, function(mat) mat[-19, ])
-}
+# remove 19th row
+nrow(result_winklers_95[[1]])
+result_winklers_80 <- lapply(result_winklers_80, function(mat) mat[-19, ])
+result_winklers_95 <- lapply(result_winklers_95, function(mat) mat[-19, ])
+result_cprs <- lapply(result_cprs, function(mat) mat[-19, ])
 
+saveRDS(result_winklers_80, "tourism/job/results/result_winklers_80.rds")
+saveRDS(result_winklers_95, "tourism/job/results/result_winklers_95.rds")
+saveRDS(result_cprs, "tourism/job/results/result_cprs.rds")
 ```
 
 
 ```{r}
 library(stringr)
 
-winklers_df <- result_winklers |> 
+result_winklers_80 <- readRDS("tourism/job/results/result_winklers_80.rds")
+result_winklers_95 <- readRDS("tourism/job/results/result_winklers_95.rds")
+
+winklers_df <- result_winklers_80 |> 
   transform_sim_MSE(F) |> 
   # change column name "h" to "iter", "MSE" to "score"
   rename(iter = h, score = MSE)
@@ -391,7 +429,9 @@ winklers_df <- winklers_df %>%
 # filter last 3 years
 winklers_df <- winklers_df %>%
   filter(iter <= M - 12*3 - 1) # keep only the first M iterations
+```
 
+```{r}
 # winklers per model
 winklers_df |> 
   group_by(.model) |>
@@ -418,7 +458,7 @@ winklers_df |>
   ggplot(aes(x = .model, y = pct_change, fill = .model)) +
     geom_col() +
     labs(x = "Model", y = "% improvements",
-         title = "% relative improvements in Winkler score (95) compared to Base",
+         title = "% relative improvements in Winkler score (80) compared to Base",
          subtitle = "Interpret: negative values indicate improvement") +
     theme_minimal()
 
@@ -441,5 +481,61 @@ winklers_df |>
          title = "% relative improvements in Winkler score (95) compared to Base",
          subtitle = "Interpret: negative values mean improvement") +
     facet_wrap(~ level, ncol=2, scales = "free_y") +
+    theme_minimal()
+```
+
+
+```{r}
+# average of % improvements per series
+winklers_df <- winklers_df |>
+  group_by(series, iter) |>
+  mutate(
+    base_score = score[.model == "base"]
+  ) |>
+  ungroup() |>
+  mutate(pct_change_per_series = (score - base_score) / base_score * 100)
+  
+winklers_df |> 
+  group_by(.model) |> 
+  summarise(
+    pct_change_avg = mean(pct_change_per_series)
+  ) |> 
+  ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
+    geom_col() +
+    labs(x = "Model", y = "% improvements",
+         title = "Average of % relative improvements in Winkler score (80) compared to Base",
+         subtitle = "Interpret: negative values indicate improvement") +
+    theme_minimal()
+
+winklers_df |> 
+  group_by(.model, level) |> 
+  summarise(
+    pct_change_avg = mean(pct_change_per_series)
+  ) |> 
+  ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
+    geom_col(position = "dodge") +
+    labs(x = "Level", y = "% improvements",
+         title = "Average of % relative improvements in Winkler score (80) compared to Base",
+         subtitle = "Interpret: negative values mean improvement") +
+    facet_wrap(~ level, ncol=2, scales = "free_y") +
+    theme_minimal()  
+```
+
+
+
+```{r}
+# lolipop plots
+winklers_df |> 
+  group_by(series, level, .model) |> 
+  summarise(
+    pct_change_avg = mean(pct_change_per_series)
+  ) |> 
+  filter(level == "Region") |>
+  ggplot(aes(x = series, y = pct_change_avg)) +
+    geom_segment(aes(xend = series, yend = 0), color = "grey") +
+    geom_point(aes(color = .model), size = 2) +
+    # coord_flip() +
+    theme(axis.text.y = element_blank()) +
+    # facet_wrap(~ level, ncol=2, scales = "free_y")
     theme_minimal()
 ```
