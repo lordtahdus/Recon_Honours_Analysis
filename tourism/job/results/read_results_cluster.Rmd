@@ -282,7 +282,7 @@ result_winklers_80 <- setNames(
   model_names
 )
 result_winklers_95 <- result_winklers_80
-result_cprs <- result_winklers_80
+result_crps <- result_winklers_80
 
 # Get actual data
 y <- visnights_full |> 
@@ -363,7 +363,7 @@ for (i in 1:M) {
         base_fc, sqrt(diag(W1_hats[[model]])), actual, 0.95
       )
       # CRPS for base model
-      result_cprs[[model]][i, ] <- vectorise_crps(
+      result_crps[[model]][i, ] <- vectorise_crps(
         base_fc, sqrt(diag(W1_hats[[model]])), actual
       )
 
@@ -392,7 +392,7 @@ for (i in 1:M) {
         mu = y_recon, sd = sqrt(diag(W1_recon)), actual, 0.95
       )
       # CRPS for reconciled model
-      result_cprs[[model]][i, ] <- vectorise_crps(
+      result_crps[[model]][i, ] <- vectorise_crps(
         mu = y_recon, sd = sqrt(diag(W1_recon)), actual
       )
     }
@@ -403,11 +403,11 @@ for (i in 1:M) {
 nrow(result_winklers_95[[1]])
 result_winklers_80 <- lapply(result_winklers_80, function(mat) mat[-19, ])
 result_winklers_95 <- lapply(result_winklers_95, function(mat) mat[-19, ])
-result_cprs <- lapply(result_cprs, function(mat) mat[-19, ])
+result_crps <- lapply(result_crps, function(mat) mat[-19, ])
 
 saveRDS(result_winklers_80, "tourism/job/results/result_winklers_80.rds")
 saveRDS(result_winklers_95, "tourism/job/results/result_winklers_95.rds")
-saveRDS(result_cprs, "tourism/job/results/result_cprs.rds")
+saveRDS(result_crps, "tourism/job/results/result_crps.rds")
 ```
 
 
@@ -416,7 +416,7 @@ library(stringr)
 
 result_winklers_80 <- readRDS("tourism/job/results/result_winklers_80.rds")
 result_winklers_95 <- readRDS("tourism/job/results/result_winklers_95.rds")
-result_cprs <- readRDS("tourism/job/results/result_cprs.rds")
+result_crps <- readRDS("tourism/job/results/result_crps.rds")
 
 score_df <- result_winklers_80 |> 
   transform_sim_MSE(F) |> 
