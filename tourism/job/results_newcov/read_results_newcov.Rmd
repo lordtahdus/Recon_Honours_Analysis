@@ -267,8 +267,9 @@ for (i in 1:length(result_list)) {
 sum / length(result_list)
 ```
 
-# Variances of base errors 1-12 steps
+# Validate assumption W_h = k_h W_1
 
+## D_h (D_1)^-1
 ```{r}
 variances_base_errors <- matrix(
   0, nrow = length(rownames(S)), ncol = 12, 
@@ -276,6 +277,7 @@ variances_base_errors <- matrix(
 )
 
 for (h_i in 1:12) {
+  # row for iteration, col for series
   base_e_hstep <- matrix(0, nrow = M, ncol = length(rownames(S)))
   for (i in 1:M) {
     result <- result_list[[i]]
@@ -303,6 +305,57 @@ variances_base_errors[!apply(variances_base_errors, 1, function(x) any(x > 2)), 
   plot_heatmap() |> 
   plotly::ggplotly()
 ```
+
+## W_h (W_1)^-1
+
+Need shrinkage since sample covariance is not invertible
+
+```{r}
+# 11 ratios for h = 2, ..., 12 / h = 1
+W_ratio <- list()
+
+base_e_1 <- matrix(
+  0, nrow = M-1, ncol = length(rownames(S)), 
+  dimnames = list(NULL, rownames(S))
+)
+for (i in 1:(M-1)) {
+  result <- result_list[[i]]
+  # get the 1-step-ahead base errors
+  base_e_1[i, ] <- result$e$base[1, ]
+}
+W_1 <- shrinkage_est(base_e_1)$cov
+
+for (h_i in 2:12) {
+  base_e_hstep <- matrix(
+    0, nrow = M-1, ncol = length(rownames(S)), 
+    dimnames = list(NULL, rownames(S))
+  )
+  for (i in 1:(M-1)) {
+    result <- result_list[[i]]
+    # get the h-step-ahead base errors
+    base_e_hstep[i, ] <- result$e$base[h_i, ]
+  }
+  W_h <- shrinkage_est(base_e_hstep)$cov
+  W_ratio[[paste0("h_", h_i)]] <- W_h %*% solve(W_1)
+}
+
+range <- 200:250
+W_plot <- W_ratio$h_12
+
+# only bottom series
+W_plot <- W_plot[colnames(S), colnames(S)]
+
+sum(abs(W_plot) > 2)
+# thresholding for better visualization
+W_plot <- sign(W_plot) * pmin(abs(W_plot), 2)
+plot_heatmap(W_plot) + ggtitle("W_h (W_1)^-1")
+
+# find columns(2)/rows(1) with large values
+which(apply(W_plot, 2, function(x) sum(abs(x) >= 3) > 5))
+which(apply(W_plot, 1, function(x) sum(abs(x) >= 3) > 5))
+
+```
+
 
 
 ```{r}
