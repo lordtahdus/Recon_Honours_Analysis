@@ -174,7 +174,7 @@ improv_overtime[, 2:4] |>            # keep the three models
 
 ## At each level
 
-```{r}
+```{r get levels}
 series <- rownames(S)
 
 level_index <- set_names(
@@ -423,33 +423,36 @@ score_df <- result_crps |>
   # change column name "h" to "iter", "MSE" to "score"
   rename(iter = h, score = MSE)
 
-# add level
-score_df <- score_df %>% 
-  mutate(
-    level = level_map[series] %||% NA_character_,
-    # %||% is just “if lookup returns NULL, fall back to NA
-    level = factor(
-      level,
-      levels = desired_order,
-      labels = str_replace_all(desired_order, "_", " ")  # replace "_" with " "
+# wrangle
+{
+  # add level
+  score_df <- score_df %>% 
+    mutate(
+      level = level_map[series] %||% NA_character_,
+      # %||% is just “if lookup returns NULL, fall back to NA
+      level = factor(
+        level,
+        levels = desired_order,
+        labels = str_replace_all(desired_order, "_", " ")  # replace "_" with " "
+      )
     )
-  )
 
-# filter last 3 years
-score_df <- score_df %>%
-  filter(iter <= M - 12*3 - 1) # keep only the first M iterations
+  # filter last 3 years
+  score_df <- score_df %>%
+    filter(iter <= M - 12*3 - 1) # keep only the first M iterations
 
-# average of % improvements per series
-score_df <- score_df |>
-  group_by(series, iter) |>
-  mutate(
-    base_score = score[.model == "base"]
-  ) |>
-  ungroup() |>
-  mutate(pct_change_per_series = (score - base_score) / base_score * 100)
+  # average of % improvements per series
+  score_df <- score_df |>
+    group_by(series, iter) |>
+    mutate(
+      base_score = score[.model == "base"]
+    ) |>
+    ungroup() |>
+    mutate(pct_change_per_series = (score - base_score) / base_score * 100)
+}
 ```
 
-```{r}
+```{r pct over average}
 # # winklers per model
 # score_df |> 
 #   group_by(.model) |>
@@ -476,7 +479,7 @@ score_df |>
   ggplot(aes(x = .model, y = pct_change, fill = .model)) +
     geom_col() +
     labs(x = "Model", y = "% improvements",
-         title = "% relative improvements in Winkler score (80) compared to Base",
+         title = "% relative improvements in CRPS compared to Base",
          subtitle = "Interpret: negative values indicate improvement.") +
     theme_minimal()
 
@@ -496,7 +499,7 @@ score_df |>
   ggplot(aes(x = .model, y = pct_change, fill = .model)) +
     geom_col(position = "dodge") +
     labs(x = "Level", y = "% improvements",
-         title = "% relative improvements in Winkler score (95) compared to Base",
+         title = "% relative improvements in CRPS compared to Base",
          subtitle = "Interpret: negative values mean improvement") +
     facet_wrap(~ level, ncol=2, scales = "free_y") +
     theme_minimal()
@@ -504,7 +507,7 @@ score_df |>
 
 ## Average of % improvements
 ```{r}
-  
+score_label <- "CRPS"
 score_df |> 
   group_by(.model) |> 
   summarise(
@@ -513,8 +516,8 @@ score_df |>
   ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
     geom_col() +
     labs(x = "Model", y = "% improvements",
-         title = "Average of % relative improvements in Winkler score (80) compared to Base",
-         subtitle = "Interpret: negative values indicate improvement") +
+         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+         subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
     theme_minimal()
 
 score_df |> 
@@ -525,8 +528,8 @@ score_df |>
   ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
     geom_col(position = "dodge") +
     labs(x = "Level", y = "% improvements",
-         title = "Average of % relative improvements in Winkler score (80) compared to Base",
-         subtitle = "Interpret: negative values mean improvement") +
+         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+         subtitle = "Interpret: negative values mean improvement. Avg over pct") +
     facet_wrap(~ level, ncol=2, scales = "free_y") +
     theme_minimal()  
 ```
