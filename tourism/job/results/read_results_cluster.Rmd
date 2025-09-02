@@ -347,7 +347,7 @@ for (i in 1:M) {
   W1_hats[["mint_n_pc_K1"]] <- novelist_pc_est(resid, 1, result$W_n["delta", 2], result$W_n["lambda", 2])$cov
   W1_hats[["mint_n_pc_K2"]] <- novelist_pc_est(resid, 2, result$W_n["delta", 3], result$W_n["lambda", 3])$cov
 
-  W1_hats[["ols_shr"]] <- shrinkage_est(resid)$cov   # FOR MULTIVARIATE ONLY
+  W1_hats[["ols_shr"]] <- shrinkage_est(resid)$cov
   
   for (model in model_names) {
 
@@ -388,7 +388,7 @@ for (i in 1:M) {
         mu = y_recon, sd = sqrt(diag(W1_recon)), actual, 80
       )
       result_winklers_95[[model]][i, ] <- vectorise_winkler(
-        mu = y_recon, sd = sqrt(diag(W1_recon)), actual, 0.95
+        mu = y_recon, sd = sqrt(diag(W1_recon)), actual, 95
       )
       # CRPS for reconciled model
       result_crps[[model]][i, ] <- vectorise_crps(
@@ -405,9 +405,9 @@ result_winklers_80 <- lapply(result_winklers_80, function(mat) mat[-19, ])
 result_winklers_95 <- lapply(result_winklers_95, function(mat) mat[-19, ])
 result_crps <- lapply(result_crps, function(mat) mat[-19, ])
 
-saveRDS(result_winklers_80, "tourism/job/results/result_winklers_80.rds")
-saveRDS(result_winklers_95, "tourism/job/results/result_winklers_95.rds")
-saveRDS(result_crps, "tourism/job/results/result_crps.rds")
+# saveRDS(result_winklers_80, "tourism/job/results/result_winklers_80.rds")
+# saveRDS(result_winklers_95, "tourism/job/results/result_winklers_95.rds")
+# saveRDS(result_crps, "tourism/job/results/result_crps.rds")
 ```
 
 ## Wrangle and plots
@@ -436,6 +436,9 @@ score_df <- result_crps |>
         labels = str_replace_all(desired_order, "_", " ")  # replace "_" with " "
       )
     )
+  # filter pc2 models
+  score_df <- score_df %>%
+    filter(!grepl("K2", .model)) # remove pc2 models
 
   # filter last 3 years
   score_df <- score_df %>%
@@ -463,51 +466,51 @@ score_df <- result_crps |>
 #          title = "Average Winkler scores for each model") +
 #     theme_minimal()
 
-# winklers improvements per model
-score_df |>
-  group_by(series, iter) |>
-  mutate(
-    base_score = score[.model == "base"]
-  ) |>
-  ungroup() |>
-  group_by(.model) |>
-  summarise(
-    score = mean(score),
-    base_score = mean(base_score),
-    pct_change = (score - base_score) / base_score * 100
-  ) |> 
-  ggplot(aes(x = .model, y = pct_change, fill = .model)) +
-    geom_col() +
-    labs(x = "Model", y = "% improvements",
-         title = "% relative improvements in CRPS compared to Base",
-         subtitle = "Interpret: negative values indicate improvement.") +
-    theme_minimal()
+# # winklers improvements per model
+# score_df |>
+#   group_by(series, iter) |>
+#   mutate(
+#     base_score = score[.model == "base"]
+#   ) |>
+#   ungroup() |>
+#   group_by(.model) |>
+#   summarise(
+#     score = mean(score),
+#     base_score = mean(base_score),
+#     pct_change = (score - base_score) / base_score * 100
+#   ) |> 
+#   ggplot(aes(x = .model, y = pct_change, fill = .model)) +
+#     geom_col() +
+#     labs(x = "Model", y = "% improvements",
+#          title = "% relative improvements in CRPS compared to Base",
+#          subtitle = "Interpret: negative values indicate improvement.") +
+#     theme_minimal()
 
-# winklers improvements per model per level
-score_df |>
-  group_by(series, iter) |>
-  mutate(
-    base_score = score[.model == "base"]
-  ) |>
-  ungroup() |>
-  group_by(.model, level) |>
-  summarise(
-    score = mean(score),
-    base_score = mean(base_score),
-    pct_change = (score - base_score) / base_score * 100
-  ) |> 
-  ggplot(aes(x = .model, y = pct_change, fill = .model)) +
-    geom_col(position = "dodge") +
-    labs(x = "Level", y = "% improvements",
-         title = "% relative improvements in CRPS compared to Base",
-         subtitle = "Interpret: negative values mean improvement") +
-    facet_wrap(~ level, ncol=2, scales = "free_y") +
-    theme_minimal()
+# # winklers improvements per model per level
+# score_df |>
+#   group_by(series, iter) |>
+#   mutate(
+#     base_score = score[.model == "base"]
+#   ) |>
+#   ungroup() |>
+#   group_by(.model, level) |>
+#   summarise(
+#     score = mean(score),
+#     base_score = mean(base_score),
+#     pct_change = (score - base_score) / base_score * 100
+#   ) |> 
+#   ggplot(aes(x = .model, y = pct_change, fill = .model)) +
+#     geom_col(position = "dodge") +
+#     labs(x = "Level", y = "% improvements",
+#          title = "% relative improvements in CRPS compared to Base",
+#          subtitle = "Interpret: negative values mean improvement") +
+#     facet_wrap(~ level, ncol=2, scales = "free_y") +
+#     theme_minimal()
 ```
 
 ## Average of % improvements
 ```{r}
-score_label <- "CRPS"
+score_label <- "W95"
 score_df |> 
   group_by(.model) |> 
   summarise(
