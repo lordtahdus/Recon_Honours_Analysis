@@ -271,7 +271,7 @@ library(distributional)
 
 M <- length(result_list_full)
 model_names <- all_model_names[!grepl("K5|K10|K20", all_model_names)] # remove pc models
-# model_names <- c(model_names, "base_shr", "ols_shr") # add base_shr ols_shr FOR MULTIVARIATE ONLY
+model_names <- c(model_names, "ols_shr") # add ols_shr
 
 #   row - CV iterations
 #   col - series
@@ -347,12 +347,11 @@ for (i in 1:M) {
   W1_hats[["mint_n_pc_K1"]] <- novelist_pc_est(resid, 1, result$W_n["delta", 2], result$W_n["lambda", 2])$cov
   W1_hats[["mint_n_pc_K2"]] <- novelist_pc_est(resid, 2, result$W_n["delta", 3], result$W_n["lambda", 3])$cov
 
-  # W1_hats[["base_shr"]] <- shrinkage_est(resid)$cov   # FOR MULTIVARIATE ONLY
-  # W1_hats[["ols_shr"]] <- W1_hats[["base_shr"]]
-    
+  W1_hats[["ols_shr"]] <- shrinkage_est(resid)$cov   # FOR MULTIVARIATE ONLY
+  
   for (model in model_names) {
 
-    if (model %in% c("base", "base_shr")) {
+    if (model == "base") {
       base_fc <- actual - result$e$base[1, ] # recover 1-step ahead base forecast
 
       # Winkler score for base model
@@ -360,7 +359,7 @@ for (i in 1:M) {
         base_fc, sqrt(diag(W1_hats[[model]])), actual, 80
       )
       result_winklers_95[[model]][i, ] <- vectorise_winkler(
-        base_fc, sqrt(diag(W1_hats[[model]])), actual, 0.95
+        base_fc, sqrt(diag(W1_hats[[model]])), actual, 95
       )
       # CRPS for base model
       result_crps[[model]][i, ] <- vectorise_crps(
@@ -397,6 +396,7 @@ for (i in 1:M) {
       )
     }
   }
+  cat("Done", i, "\n")
 }
 
 # remove 19th row
