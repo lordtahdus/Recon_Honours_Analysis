@@ -702,7 +702,7 @@ for (i in 1:M) {
 ```{r}
 saveRDS(result_energy, "tourism/job/results/result_energy_10k.rds")
 
-all(readRDS("tourism/job/results/result_energy_10k.rds") == result_energy)
+readRDS("tourism/job/results/result_energy_10k.rds") -> result_energy
 
 # remove 19th row
 if (all(result_energy[19, ] == 0)) {
@@ -710,29 +710,38 @@ if (all(result_energy[19, ] == 0)) {
   result_energy <- result_energy[-19, ]
 }
 
-energy_df <- result_energy |> 
-  as_tibble(rownames = "iter") |>
-  pivot_longer(-iter, names_to = ".model", values_to = "score") |>
-  mutate(iter = as.integer(iter)) |>
+{
+  energy_df <- result_energy |> 
+    as_tibble(rownames = "iter") |>
+    pivot_longer(-iter, names_to = ".model", values_to = "score") |>
+    mutate(iter = as.integer(iter))
+  # filter last 3 years
+  energy_df <- energy_df |> 
+    filter(iter <= M - 12*3 - 1) # keep only the first M iterations
   # pct change
-  group_by(iter) |>
-  mutate(
-    base_score = score[.model == "base"],
-    pct_change_per_series = (score - base_score) / base_score * 100
-  )
+  energy_df <- energy_df |> 
+    group_by(iter) |>
+    mutate(
+      base_score = score[.model == "base"],
+      pct_change_per_series = (score - base_score) / base_score * 100
+    )
+}
+```
 
+## Plots
+
+```{r}
+# overall energy score per model
 energy_df |> 
   group_by(.model) |> 
   summarise(
     mean_score = mean(score),
     pct_change_avg = mean(pct_change_per_series)
-  ) |> 
+  ) |>
   ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
     geom_col() +
     labs(x = "Model", y = "% improvements",
          title = "Average of % relative improvements in Energy Score compared to Base",
-         subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
+         subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016") +
     theme_minimal()
-  
-
 ```
