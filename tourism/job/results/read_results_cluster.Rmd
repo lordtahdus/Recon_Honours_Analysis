@@ -7,7 +7,7 @@ editor_options:
 ```{r libs}
 # library(MASS)
 # library(matrixcalc)
-# library(Matrix)
+library(Matrix)
 library(tidyr)
 library(ggplot2)
 
@@ -576,4 +576,163 @@ ggplot(plot_df, aes(x = series_ord, y = pct_change_avg)) +
   labs(x = "Series", y = "% improvements",
        title = "Average of % relative improvements in CRPS compared to Base",
        subtitle = "Negative values mean improvement; values ≥ 30% are capped at 30%")
+```
+
+
+## Get Energy Score
+
+Need sampling to approximate the energy score.
+To ensure coherency, we sample from the reconciled distribution of the bottom-level series, then aggregate up to obtain all levels.
+
+mu_b = G * mu
+W_b = G * W * G^T
+b_sample ~ N(mu_b, W_b)
+y_sample = S * b_sample
+
+Calculate energy score from y_samples and actuals
+
+```{r}
+coherent_draws <- function(mu_base, Sigma_base, S, G, m) {
+  # mu: vector of base forecast means (all series)
+  # Sigma: covariance matrix of base forecast (all series)
+  
+  mu_bot <- G %*% mu_base
+  Sigma_bot <- G %*% Sigma_base %*% t(G)
+  
+  b_samples <- MASS::mvrnorm(m, mu_bot, Sigma_bot) # m x p_bottpm
+  y_samples <- t(S %*% t(b_samples))           # m x p
+  return(y_samples)
+}
+
+energy_score_from_samples <- function(samples, actual) {
+  m <- nrow(samples)
+  term1 <- mean(sqrt(rowSums(
+    (sweep(samples, 2, actual, "-"))^2
+  )))
+  term2 <- mean(sqrt(rowSums(
+    (samples[sample(1:m, m, replace = TRUE), ] - samples[sample(1:m, m, replace = TRUE), ])^2
+  )))
+  return(term1 - 0.5 * term2)
+}
+```
+
+
+
+```{r}
+library(distributional)
+
+M <- length(result_list_full)
+model_names <- all_model_names[!grepl("K5|K10|K20", all_model_names)] # remove pc models
+model_names <- c(model_names, "base_shr", "ols_shr") # add base_shr ols_shr FOR MULTIVARIATE ONLY
+
+#   row - CV iterations
+#   col - models
+result_energy <- matrix(0, M, length(model_names),
+  dimnames = list(1:M, model_names)
+)
+
+# Get actual data
+y <- visnights_full |> 
+  as_tibble() |> 
+  arrange(State, Region) |>
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) |>
+  select(name, Nights, Month) |>
+  pivot_wider(names_from = name, values_from = Nights) |>
+  select(-Month) |>
+  as.matrix()
+y <- y[, rownames(S)]
+
+start_date <- seq_dates$start[1]
+m <- 10000 # number of samples
+
+for (i in 1:M) {
+  
+  if (i == 19) next # iteration 19 has error
+  result <- result_list_full[[i]]
+  result$e <- flatten_e_list(result$e) # flatten the list of errors
+  resid <- result$resid
+
+  actual <- y[seq_dates$end[i] + 1 - start_date + 1, ] # 1-step ahead actuals
+
+  # Recover a list of W1_hat for each model
+  W1_hats <- list()
+  W1_hats[["base"]] <- nearPD(cov(resid))$mat |> as.matrix() # sample variance of 1-step-ahead residuals as a proxy
+  W1_hats[["ols"]] <- W1_hats[["base"]]
+
+  W1_hats[["mint_shr"]] <- shrinkage_est(resid, result$W_shr[1])$cov
+  W1_hats[["mint_n"]] <- novelist_est(resid, result$W_n["delta", 1], result$W_n["lambda", 1])$cov
+  rownames(W1_hats[["mint_n"]]) <- colnames(W1_hats[["mint_n"]]) <- rownames(S)
+  # pc models
+  W1_hats[["mint_shr_pc_K1"]] <- shrinkage_pc_est(resid, 1, result$W_shr[2])$cov
+  W1_hats[["mint_shr_pc_K2"]] <- shrinkage_pc_est(resid, 2, result$W_shr[3])$cov
+  W1_hats[["mint_n_pc_K1"]] <- novelist_pc_est(resid, 1, result$W_n["delta", 2], result$W_n["lambda", 2])$cov
+  W1_hats[["mint_n_pc_K2"]] <- novelist_pc_est(resid, 2, result$W_n["delta", 3], result$W_n["lambda", 3])$cov
+
+  W1_hats[["base_shr"]] <- shrinkage_est(resid)$cov   # FOR MULTIVARIATE ONLY
+  W1_hats[["ols_shr"]] <- W1_hats[["base_shr"]]
+    
+  for (model in model_names) {
+
+    if (model %in% c("base", "base_shr")) {
+      base_fc <- actual - result$e$base[1, ] # recover 1-step ahead base forecast
+
+      # Energy score for base model
+      samples <- MASS::mvrnorm(m, base_fc, W1_hats[[model]])
+      result_energy[i, model] <- energy_score_from_samples(samples, actual)
+
+    } else {
+      # obtain mapping G
+      if (model %in% c("ols", "ols_shr")) {
+        G <- solve(t(S) %*% S) %*% t(S)
+      } else {
+        P <- t(S) %*% solve(W1_hats[[model]])
+        G <- solve(P %*% S) %*% P
+      }
+      # Energy score for reconciled model
+      samples <- coherent_draws(base_fc, W1_hats[[model]], S, G, m)
+      result_energy[i, model] <- energy_score_from_samples(samples, actual)
+    }
+  }
+  cat("Done", i, "\n")
+}
+```
+
+
+
+```{r}
+saveRDS(result_energy, "tourism/job/results/result_energy_10k.rds")
+
+all(readRDS("tourism/job/results/result_energy_10k.rds") == result_energy)
+
+# remove 19th row
+if (all(result_energy[19, ] == 0)) {
+  cat("Removing 19th row\n")
+  result_energy <- result_energy[-19, ]
+}
+
+energy_df <- result_energy |> 
+  as_tibble(rownames = "iter") |>
+  pivot_longer(-iter, names_to = ".model", values_to = "score") |>
+  mutate(iter = as.integer(iter)) |>
+  # pct change
+  group_by(iter) |>
+  mutate(
+    base_score = score[.model == "base"],
+    pct_change_per_series = (score - base_score) / base_score * 100
+  )
+
+energy_df |> 
+  group_by(.model) |> 
+  summarise(
+    mean_score = mean(score),
+    pct_change_avg = mean(pct_change_per_series)
+  ) |> 
+  ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
+    geom_col() +
+    labs(x = "Model", y = "% improvements",
+         title = "Average of % relative improvements in Energy Score compared to Base",
+         subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
+    theme_minimal()
+  
+
 ```
