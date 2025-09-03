@@ -335,7 +335,7 @@ for (i in 1:M) {
 
   # Recover a list of W1_hat for each model
   W1_hats <- list()
-  W1_hats[["base"]] <- cov(resid) # sample variance of 1-step-ahead residuals as a proxy
+  W1_hats[["base"]] <- compute_cov_matrix(resid, T) # sample variance of 1-step-ahead residuals as a proxy
   W1_hats[["ols"]] <- W1_hats[["base"]]
 
   W1_hats[["mint_shr"]] <- shrinkage_est(resid, result$W_shr[1])$cov
