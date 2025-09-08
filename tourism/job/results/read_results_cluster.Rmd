@@ -410,13 +410,70 @@ result_crps <- lapply(result_crps, function(mat) mat[-19, ])
 # saveRDS(result_crps, "tourism/job/results/result_crps.rds")
 ```
 
+### Inspect OLS_shr
+
+```{r}
+all.equal(W1_hats[["ols_shr"]], W1_hats[["mint_shr"]])
+all.equal(diag(W1_hats[["ols"]]), diag(W1_hats[["ols_shr"]]))
+
+base_cov <- compute_cov_matrix(resid, T)
+shr_cov <- shrinkage_est(resid)
+
+G <- solve(t(S) %*% S) %*% t(S)
+W1_recon_ols <- S %*% G %*% base_cov %*% t(G) %*% t(S)
+W1_recon_ols_shr <- S %*% G %*% shr_cov$cov %*% t(G) %*% t(S)
+
+W1_recon_ols_diag <- S %*% G %*% diag(diag(base_cov)) %*% t(G) %*% t(S)
+
+all.equal(shr_cov$cov, shr_cov$lambda * diag(diag(base_cov)) + (1 - shr_cov$lambda) * base_cov) # TRUE
+all.equal(
+  W1_recon_ols_shr, 
+  shr_cov$lambda * S %*% G %*% diag(diag(base_cov)) %*% t(G) %*% t(S) + (1 - shr_cov$lambda) * W1_recon_ols
+) # TRUE 
+
+P <- t(S) %*% solve(W1_hats[["mint_shr"]])
+G <- solve(P %*% S) %*% P
+W1_recon_mint_shr <- S %*% G %*% W1_hats[["mint_shr"]] %*% t(G) %*% t(S)
+
+P <- t(S) %*% solve(W1_hats[["mint_n"]])
+G <- solve(P %*% S) %*% P
+W1_recon_mint_n <- S %*% G %*% W1_hats[["mint_n"]] %*% t(G) %*% t(S)
+
+# inspect variance shrinkage for ols
+tibble(
+  series = colnames(W1_recon_ols),
+  ols = diag(W1_recon_ols), 
+  ols_shr = diag(W1_recon_ols_shr),
+  mint_shr = diag(W1_recon_mint_shr),
+  mint_n = diag(W1_recon_mint_n)
+) |>
+  mutate(
+    diff = mint_shr - mint_n,
+    pct_shrink = diff / mint_shr * 100
+    # diff = ols_shr - ols,
+    # pct_shrink = diff / ols * 100    
+  ) |>
+  arrange(desc(pct_shrink)) |>
+  # cap at 100%
+  # mutate(pct_shrink = pmin(pct_shrink, 100)) |>
+  # ploot
+  ggplot(aes(x = reorder(series, pct_shrink), y = pct_shrink)) +
+    geom_col() +
+    coord_flip() +
+    labs(x = "Series", y = "% reduction in variance",
+         title = "% change in variance by shrinkage for OLS (var ols_shr - var ols)",
+         subtitle = "iter 133") +
+    theme_minimal() +
+    theme(axis.text.y = element_blank())
+```
+
 ## Wrangle and plots
 ```{r}
 library(stringr)
 
-result_winklers_80 <- readRDS("tourism/job/results/result_winklers_80.rds")
-result_winklers_95 <- readRDS("tourism/job/results/result_winklers_95.rds")
-result_crps <- readRDS("tourism/job/results/result_crps.rds")
+result_winklers_80 <- readRDS("tourism/job/results/result_winklers_80_new.rds")
+result_winklers_95 <- readRDS("tourism/job/results/result_winklers_95_new.rds")
+result_crps <- readRDS("tourism/job/results/result_crps_new.rds")
 
 score_df <- result_crps |> 
   transform_sim_MSE(F) |> 
@@ -705,8 +762,7 @@ for (i in 1:M) {
 ```{r}
 saveRDS(result_energy, "tourism/job/results/result_energy_10k.rds")
 
-readRDS("tourism/job/results/result_energy_10k.rds") -> result_energy
-
+readRDS("tourism/job/results/result_energy_10k.rds") -> 7
 # remove 19th row
 if (all(result_energy[19, ] == 0)) {
   cat("Removing 19th row\n")
