@@ -26,7 +26,7 @@ order_S <- rownames(S)
 # groups <- c(6,6,6,6,6,6)
 # groups <- c(50,50)
 
-T <- 304
+T <- 54
 h <- 4
 Tsplit <- T - h
 
@@ -59,7 +59,7 @@ S <- construct_S(
   sparse = FALSE,
   ascending = FALSE
 )
-S %>% plot_heatmap()
+S |> plot_heatmap()
 order_S <- rownames(S)
 
 # ranges for coefs in VAR
@@ -118,7 +118,7 @@ V <- diag(x = sample(
 ))
 Sigma <- V %*% Sigma %*% V
 
-plot_heatmap(Sigma %>% cov2cor(), TRUE)
+plot_heatmap(Sigma |> cov2cor(), TRUE)
 
 ### modify a range of values---------
 R <- cov2cor(Sigma)
@@ -130,7 +130,7 @@ R[lower < abs(R) & abs(R) < upper] <-
 
 plot_heatmap(R)
 any((eigen(R)$values) < 1e-8)
-R <- nearPD(R)$mat %>% as.matrix()
+R <- nearPD(R)$mat |> as.matrix()
 D <- diag(sqrt(diag(Sigma)))
 Sigma <- D %*% R %*% D
 
@@ -162,11 +162,11 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   bottom <- simulate_bottom_var(groups, T, intercept = 100, A=A, Sig=Sigma)
   hts_mat <- bottom$Y %*% t(S)
 
-  hts <- hts_mat %>%
-    as_tibble() %>%
-    mutate(time = seq(1, nrow(hts_mat))) %>%
-    # select(time, everything()) %>%
-    as_tsibble(index = time) %>%
+  hts <- hts_mat |>
+    as_tibble() |>
+    mutate(time = seq(1, nrow(hts_mat))) |>
+    # select(time, everything()) |>
+    as_tsibble(index = time) |>
     pivot_longer(
       cols = -time,
       names_to = "series",
@@ -175,34 +175,34 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
 
   # # # # # #
   # Fit and base forecasts
-  fit <- hts %>%
-    filter(time <= Tsplit) %>%
+  fit <- hts |>
+    filter(time <= Tsplit) |>
     model(
       arima = ARIMA(value)
     )
   fc <- fit |>
     forecast(h = h) |>
     as_fable(response = "value", distribution = value)
-  fc <- fc %>%
+  fc <- fc |>
     mutate(h = time - Tsplit)
 
   # Get data
   y <- hts_mat[1:Tsplit, order_S]
   actual <- hts_mat[(Tsplit + 1):T, order_S]
 
-  y_hat <- fit %>%
-    augment() %>%
-    select(series, .fitted) %>%
-    pivot_wider(names_from = series, values_from = .fitted, names_sort = FALSE) %>%
-    as_tibble() %>%
-    select(-time) %>%
+  y_hat <- fit |>
+    augment() |>
+    select(series, .fitted) |>
+    pivot_wider(names_from = series, values_from = .fitted, names_sort = FALSE) |>
+    as_tibble() |>
+    select(-time) |>
     as.matrix()
 
-  base_fc <- fc %>%
-    as_tibble() %>%
-    select(series, .mean, time) %>%
-    pivot_wider(names_from = series, values_from = .mean) %>%
-    select(-time) %>%
+  base_fc <- fc |>
+    as_tibble() |>
+    select(series, .mean, time) |>
+    pivot_wider(names_from = series, values_from = .mean) |>
+    select(-time) |>
     as.matrix()
 
   y_hat <- y_hat[, order_S]
@@ -210,48 +210,31 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
 
   # # # # # #
   # Get covariance estimates
+  Ks <- c(0, 1, 2)
+
+  # shrinkage estimator
   W_shr <- shrinkage_est(
     y - y_hat
   )
+  # shrinkage estimator with PC adjustment
+  W_shr_pc <- lapply(Ks[-1], function(K) {
+    shrinkage_pc_est(y - y_hat, K = K)
+  })
+  names(W_shr_pc) <- paste0("K", Ks[-1])
 
-  window <- round(Tsplit * 0.7)
-  W_n <- novelist_cv(
+  window <- round(dim(y)[1] * 0.7)
+  # NOVELIST estimator with and without PC adjustment
+  W_n_list <- novelist_pc_cv(
     y,
     y_hat,
+    Ks = Ks,
     S,
     window = window,
     deltas = seq(0, 1, by = 0.05),
     ensure_PD = TRUE,
-    message = message
+    message = FALSE
   )
-
-  # C++ version
-  # W_n <- novelist_cv_cpp(
-  #   y,
-  #   y_hat,
-  #   S,
-  #   window = window,
-  #   deltas = seq(0, 1, by = 0.05),
-  #   ensure_PD = TRUE
-  # )
-
-  W_n_hstep <- novelist_cv(
-    y,
-    y_hat,
-    S,
-    window = window,
-    deltas = seq(0, 1, by = 0.05),
-    h = h,
-    ensure_PD = TRUE,
-    message = message
-  )
-
-  # # # # # #
-  # Reconcile
-  recon_mint_shr <- reconcile_mint(base_fc, S, W_shr$cov)
-  recon_mint_n <- reconcile_mint(base_fc, S, W_n$cov)
-
-  # recon_mint_n_hstep <- reconcile_mint(base_fc, S, W_n_hstep$cov)
+  W_n <- W_n_list$cov[[1]]
 
   sample_cov <- compute_cov_matrix(y - y_hat, zero_mean = T)
   if (any(eigen(sample_cov)$values < 1e-10)) {
@@ -260,33 +243,134 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
       nearPD(sample_cov)$mat
     )
   }
-  recon_mint_sample <- reconcile_mint(base_fc, S, sample_cov)
-
-  # Sigma_true <- S %*% Sigma %*% t(S)
-  # Sigma_true <- nearPD(Sigma_true)$mat # ensure positive-definite
-  # recon_mint_true <- reconcile_mint(base_fc, S, Sigma_true)
-
-  recon_ols <- reconcile_mint(base_fc, S, diag(rep(1, nrow(S)))) # identity matrix
-
 
   # # # # # #
-  # Return
-  SSE <- list(
+  # Reconcile
+  recon_ols <- reconcile_mint(base_fc, S, diag(rep(1, nrow(S)))) # identity matrix
+  recon_mint_shr <- reconcile_mint(base_fc, S, W_shr$cov)
+  recon_mint_n <- reconcile_mint(base_fc, S, W_n)
+  # pc versions
+  recon_mint_shr_pc <- lapply(W_shr_pc, function(W) {
+    reconcile_mint(base_fc, S, W$cov)
+  })
+  recon_mint_n_pc <- lapply(W_n_list$cov[-1], function(W) {
+    reconcile_mint(base_fc, S, W)
+  })
+  names(recon_mint_shr_pc) <- paste0("mint_shr_pc_", names(recon_mint_shr_pc))
+  names(recon_mint_n_pc) <- paste0("mint_n_pc_", names(recon_mint_n_pc))
+  # mint sample
+  recon_mint_sample <- reconcile_mint(base_fc, S, sample_cov)
+
+  # # # # # #
+  # Return vanilla
+  e <- list(
     base = ((actual - base_fc)^2),
     ols = ((actual - recon_ols)^2),
     mint_shr = ((actual - recon_mint_shr)^2),
     mint_n = ((actual - recon_mint_n)^2),
-    # mint_n_hstep = ((actual - recon_mint_n_hstep)^2),
-    mint_sample = ((actual - recon_mint_sample)^2)
-    # mint_true = ((actual - recon_mint_true)^2)
+    mint_sample = ((actual - recon_mint_sample)^2),
+    
+    pc = c( # sublist of all pc versions
+      lapply(recon_mint_shr_pc, function(x) actual - x),
+      lapply(recon_mint_n_pc, function(x) actual - x)
+    )
+  )
+
+  # # # 
+  # Construct cov from 1:h-step-ahead resid (_sv and _hcov)
+  # initialise the error matrices
+  e_hresid <- setNames(
+    lapply(1:4, function(x) {
+      matrix(0, h, length(rownames(S)), dimnames = list(1:h, rownames(S)))
+    }),
+    c(
+      "mint_shr_sv",
+      "mint_n_sv",
+      "mint_shr_hcov",
+      "mint_n_hcov"
+    )
+  )
+  # 1-step-ahead error is the same with original for all 4 methods
+  e_hresid[["mint_shr_sv"]][1, ] <- e_hresid[["mint_shr_hcov"]][1, ] <- e$mint_shr[1, ]
+  e_hresid[["mint_n_sv"]][1, ] <- e_hresid[["mint_n_hcov"]][1, ] <- e$mint_n[1, ]
+
+  for (h_i in 2:h) {
+    
+    fit_augment_h <- augment(fit, h = h_i) |> 
+      select(series, .fitted)
+
+    y_hat_h <- fit_augment_h |>
+      pivot_wider(names_from = series, values_from = .fitted, names_sort = FALSE) |>
+      as_tibble() |>
+      select(-time) |>
+      as.matrix()
+
+    # max number of NAs in each column
+    na_length <- max(colSums(is.na(y_hat_h)))
+
+    y_h <- y[(na_length + 1):nrow(y), , drop = FALSE] # remove the first `na_length` rows
+    y_hat_h <- y_hat_h[(na_length + 1):nrow(y_hat_h), , drop = FALSE] # remove the first `na_length` rows
+
+    base_fc_h <- base_fc[h_i, , drop = FALSE] # a row vector of the h-step-ahead forecasts
+    actual_h <- actual[h_i, , drop = FALSE]
+
+    # variance of h-step-ahead in-sample residuals
+    D_half_h <- diag(sqrt(diag(
+      compute_cov_matrix(y_h - y_hat_h, zero_mean = TRUE)
+    ))) # diagonal matrix
+
+    # 1) Scaled-correlation --------------------------
+
+    # convert to correlation then pre-multiply and post-multiply with D_half_h
+    W_shr_sv_h <- D_half_h %*% cov2cor(W_shr$cov) %*% D_half_h
+    W_n_sv_h <- D_half_h %*% cov2cor(W_n) %*% D_half_h
+
+    # 2) Direct h-step covariance ----------------------
+    W_shr_hcov_h <- shrinkage_est(
+      y_h - y_hat_h,
+      zero_mean = TRUE
+    )
+    
+    window <- round(nrow(y_hat_h) * 0.7)
+    # NOVELIST estimator with and without PC adjustment
+    W_n_hcov_h <- novelist_cv(
+      y_h, y_hat_h,
+      S,
+      window = window,
+      deltas = seq(0, 1, by = 0.05),
+      h = h_i,
+      ensure_PD = TRUE, message = FALSE
+    )
+
+    # reconcile
+    recon_shr_sv_h <- reconcile_mint(base_fc_h, S, W_shr_sv_h)
+    recon_n_sv_h <- reconcile_mint(base_fc_h, S, W_n_sv_h)
+    recon_shr_hcov_h <- reconcile_mint(base_fc_h, S, W_shr_hcov_h$cov)
+    recon_n_hcov_h <- reconcile_mint(base_fc_h, S, W_n_hcov_h$cov)
+
+    # error 
+    e_hresid[["mint_shr_sv"]][h_i, ] <- actual_h - recon_shr_sv_h
+    e_hresid[["mint_n_sv"]][h_i, ] <- actual_h - recon_n_sv_h
+    e_hresid[["mint_shr_hcov"]][h_i, ] <- actual_h - recon_shr_hcov_h
+    e_hresid[["mint_n_hcov"]][h_i, ] <- actual_h - recon_n_hcov_h
+  }
+
+  # combine but keep e_hresid as a sublist name "hresid"
+  e <- c(e, list(hresid = e_hresid))
+
+  # lambdas for shrinkage
+  W_shr_lambdas <- c(
+    K0 = W_shr$lambda,
+    sapply(W_shr_pc, function(x) x$lambda)
   )
 
   list(
-    SSE = SSE,
-    W_shr = W_shr$lambda,
-    W_n = c(W_n$lambda, W_n$delta)
-    # W_n_hstep = c(W_n_hstep$lambda, W_n_hstep$delta)
-    # W1_hat = compute_cov_matrix(y - y_hat, zero_mean = TRUE)
+    e = e,
+    W_shr = W_shr_lambdas,
+    W_n = rbind(
+      delta = W_n_list$delta,
+      lambda = W_n_list$lambda
+    )
   )
 }
 
@@ -479,26 +563,26 @@ MSE_ts |>
 error_df <- transform_error_list(error_list)
 
 # box plot of 1-step-ahead error2
-error_df %>%
-  filter(h == 1) %>%  # filter for 1-step-ahead errors
-  group_by(.model, id) %>%
-  summarise(MSE = mean(e2)) %>%
+error_df |>
+  filter(h == 1) |>  # filter for 1-step-ahead errors
+  group_by(.model, id) |>
+  summarise(MSE = mean(e2)) |>
   ggplot(aes(x = .model, y = MSE, color = .model)) +
     geom_boxplot() +
     theme_minimal()
 
 # box plot of 1-step-ahead relative improvement
-error_df %>%
-  # filter(h == 1) %>%
-  group_by(.model, id) %>%
-  summarise(MSE = mean(e2)) %>%
+error_df |>
+  # filter(h == 1) |>
+  group_by(.model, id) |>
+  summarise(MSE = mean(e2)) |>
   # calculate relative improvement compared to base model
-  group_by(id) %>%
-  mutate(base_MSE = MSE[.model == "base"]) %>%
-  ungroup() %>%
-  mutate(pct_change = (MSE - base_MSE) / base_MSE * 100) %>%
+  group_by(id) |>
+  mutate(base_MSE = MSE[.model == "base"]) |>
+  ungroup() |>
+  mutate(pct_change = (MSE - base_MSE) / base_MSE * 100) |>
   # remove outliers from mint
-  filter(pct_change < 200) %>%
+  filter(pct_change < 200) |>
   # plot
   ggplot(aes(x = .model, y = pct_change, color = .model)) +
     geom_boxplot() +
