@@ -54,3 +54,5 @@ job/S16-4-1/T300_M100_run2_er.rds
 job/S36-6-1/T100_M100_run1_er.rds
 job/S36-6-1/T300_M100_run2_er.rds
 
+# swiss analysis files ===========
+swiss_tourism/
