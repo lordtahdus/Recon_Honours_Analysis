@@ -19,6 +19,7 @@ groups <- params$groups
 S <- params$S
 A <- params$A
 Sigma <- params$Sigma
+colnames(Sigma) <- rownames(Sigma) <- colnames(A) <- rownames(A) <- colnames(S)
 order_S <- rownames(S)
 
 # groups <- c(2,2)
@@ -264,11 +265,11 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   # # # # # #
   # Return vanilla
   e <- list(
-    base = ((actual - base_fc)^2),
-    ols = ((actual - recon_ols)^2),
-    mint_shr = ((actual - recon_mint_shr)^2),
-    mint_n = ((actual - recon_mint_n)^2),
-    mint_sample = ((actual - recon_mint_sample)^2),
+    base = (actual - base_fc),
+    ols = (actual - recon_ols),
+    mint_shr = (actual - recon_mint_shr),
+    mint_n = (actual - recon_mint_n),
+    mint_sample = (actual - recon_mint_sample),
     
     pc = c( # sublist of all pc versions
       lapply(recon_mint_shr_pc, function(x) actual - x),
@@ -366,6 +367,7 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
 
   list(
     e = e,
+    resid = y - y_hat, # in-sample residuals
     W_shr = W_shr_lambdas,
     W_n = rbind(
       delta = W_n_list$delta,
