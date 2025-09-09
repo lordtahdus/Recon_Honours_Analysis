@@ -1,0 +1,121 @@
+---
+title: "read_results"
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r libs}
+# library(MASS)
+# library(matrixcalc)
+library(Matrix)
+library(tidyr)
+library(ggplot2)
+
+library(fabletools)
+library(fable)
+library(feasts)
+library(tsibble)
+library(dplyr)
+
+# library(devtools)
+# load_all()
+library(ReconCov)
+library(purrr)
+```
+
+
+
+```{r}
+path <- "sim/thesis_sim/"
+# file <- "S4_2_1_T50_M500.rds"
+file <- "S36_6_1_T50_M500.rds"
+
+result_list <- readRDS(paste0(path, file))
+h <- 4
+M <- 500
+
+# flatten out the sublist in `e`
+flatten_e_list <- function(e_list) {
+  out <- list()
+
+  for (name in names(e_list)) {
+    obj <- e_list[[name]]
+
+    if (is.list(obj) && all(vapply(obj, is.matrix, logical(1)))) {
+      ## e.g. name == "mint_shr_pc", obj contains K1 … K20
+      for (k in names(obj)) {
+        out[[paste(name, k, sep = "_")]] <- obj[[k]]   # “mint_shr_pc_K1”, …
+      }
+    } else {
+      out[[name]] <- obj                               # “base”, “ols”, …
+    }
+  }
+  out                                             # all matrices at top level
+}
+
+all_model_names <- names(flatten_e_list(result_list[[1]]$e))
+series_names <- rownames(S)
+SSE_cum <- setNames(
+  lapply(all_model_names, function(name) {
+    matrix(0, h, length(series_names), dimnames = list(1:h, series_names))
+  }),
+  all_model_names
+)
+# need to square the errors first
+SSE_cum <- Reduce(
+  function(acc, res) {
+    e_flat <- flatten_e_list(res$e)
+    Map(function(x, y) x + y^2, acc, e_flat[ names(acc) ])   # element-wise matrix addition
+  },
+  result_list,
+  init = SSE_cum
+)
+
+
+MSE <- lapply(SSE_cum, function(mat) mat / M)
+```
+
+
+```{r}
+MSE_ts <- transform_sim_MSE(MSE, F)
+
+# % improv plot
+# average first, then compute % change later
+MSE_ts |>
+#   filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
+  filter(!grepl("hresid", .model)) |>
+  filter(.model != "hresid_mint_n_hcov") |>
+  group_by(series, h) |>
+  mutate(
+    base_MSE = MSE[.model == "base"]
+  ) |>
+  ungroup() |>
+  group_by(.model, h) |>
+  summarise(
+    MSE = mean(MSE),
+    base_MSE = mean(base_MSE),
+    pct_change = (MSE - base_MSE) / base_MSE * 100
+  ) |>
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+  geom_line() +
+  theme_minimal()
+
+# # compute % per series first, then average
+# MSE_ts |>
+#   filter(.model %in% c("base", "ols", "mint_sample", "mint_shr", "mint_n")) |>
+#   # filter(grepl("mint_n", .model)) |>
+#   group_by(series, h) |>
+#   mutate(
+#     base_MSE = MSE[.model == "base"],
+#     pct_change_each = (MSE - base_MSE) / base_MSE * 100
+#   ) |> 
+#   ungroup() |>
+#   group_by(.model, h) |>
+#   summarise(
+#     pct_change = mean(pct_change_each)
+#   ) |> 
+#   ggplot(aes(x = h, y = pct_change, color = .model)) +
+#     geom_line() +
+#     theme_minimal()
+```
