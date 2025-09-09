@@ -2,7 +2,6 @@ library(MASS)
 # library(matrixcalc)
 library(Matrix)
 library(tidyr)
-library(ggplot2)
 
 library(fabletools)
 library(fable)
