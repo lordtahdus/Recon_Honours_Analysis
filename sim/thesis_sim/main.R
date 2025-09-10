@@ -242,6 +242,7 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   list(
     e = e,
     resid = y - y_hat, # in-sample residuals
+    actual = actual, # actual values
     W_shr = W_shr_lambdas,
     W_n = rbind(
       delta = W_n_list$delta,
@@ -258,7 +259,7 @@ library(progressr)
 handlers(global = TRUE) # Setup progress bar handler
 handlers("txtprogressbar")  # or "progress" for a fancier bar
 
-plan(multisession, workers = parallel::detectCores() - 2)
+plan(multisession, workers = parallel::detectCores() - 1)
 
 M <- 500
 
@@ -290,14 +291,27 @@ with_progress({
   )
 })
 
-# # Checks
-# cat("Any error in sim:", any(sapply(res_list, inherits, "sim_error")))
-# # any NA or 0s or Inf in errors
-# any(sapply(res_list$e, function(x) any(is.na(x)) | any(is.infinite(x)) | any(x == 0)))
-# any(sapply(res_list$e$pc, function(x) any(is.na(x) | any(is.infinite(x)) | any(x == 0))))
-# any(sapply(res_list$e$hresid, function(x) any(is.na(x) | any(is.infinite(x)) | any(x == 0))))
-# any(sapply(res_list$resid, function(x) any(is.na(x) | any(is.infinite(x)) | any(x == 0))))
+# Checks
+cat("Any error in sim:", any(sapply(res_list, inherits, "sim_error")))
+# any NA or 0s or Inf in errors
 
+
+# # amend the actual values each iter to old result list
+# old <- readRDS("sim/thesis_sim/S100_10_3_1_dense_T50_M500.rds")
+# for (i in 1:M) {
+#   print(all.equal(old[[i]]$resid, res_list[[i]]$resid))
+# } # check
+
+# for (i in 1:10) {
+#   print(all.equal(temp[[i]]$actual, res_list[[i]]$actual))
+# } # check
+
+
+# for (i in 1:500) {
+#   old[[i]]$actual <- res_list[[i]]$actual
+# }
+# # save
+# saveRDS(old, "sim/thesis_sim/S100_10_3_1_dense_T50_M500.rds")
 
 
 # Run SEQUENTIAL -----------------------------------
