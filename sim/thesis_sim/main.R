@@ -1,20 +1,22 @@
+# ---------------------------------------------
+# This script is for re-running the simulations for the thesis.
+# Adapted from sim/sim_parallel.R
+# ---------------------------------------------
+
 library(MASS)
 # library(matrixcalc)
 library(Matrix)
 library(tidyr)
-
 library(fabletools)
 library(fable)
 library(feasts)
 library(tsibble)
 library(dplyr)
-
 library(ReconCov)
-
 
 # Parameters -----------------------------------
 
-params <- readRDS("sim/thesis_sim/params_S4_2_1.rds")
+# params <- readRDS("sim/thesis_sim/params_S4_2_1.rds")
 
 groups <- params$groups
 S <- params$S
@@ -23,7 +25,7 @@ Sigma <- params$Sigma
 colnames(Sigma) <- rownames(Sigma) <- colnames(A) <- rownames(A) <- colnames(S)
 order_S <- rownames(S)
 
-T <- 304
+T <- 54
 h <- 4
 Tsplit <- T - h
 
@@ -256,7 +258,7 @@ library(progressr)
 handlers(global = TRUE) # Setup progress bar handler
 handlers("txtprogressbar")  # or "progress" for a fancier bar
 
-plan(multisession, workers = parallel::detectCores() - 1)
+plan(multisession, workers = parallel::detectCores() - 2)
 
 M <- 500
 
@@ -287,6 +289,16 @@ with_progress({
     future.seed = TRUE
   )
 })
+
+# # Checks
+# cat("Any error in sim:", any(sapply(res_list, inherits, "sim_error")))
+# # any NA or 0s or Inf in errors
+# any(sapply(res_list$e, function(x) any(is.na(x)) | any(is.infinite(x)) | any(x == 0)))
+# any(sapply(res_list$e$pc, function(x) any(is.na(x) | any(is.infinite(x)) | any(x == 0))))
+# any(sapply(res_list$e$hresid, function(x) any(is.na(x) | any(is.infinite(x)) | any(x == 0))))
+# any(sapply(res_list$resid, function(x) any(is.na(x) | any(is.infinite(x)) | any(x == 0))))
+
+
 
 # Run SEQUENTIAL -----------------------------------
 # set.seed(1)

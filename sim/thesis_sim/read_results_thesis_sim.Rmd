@@ -29,7 +29,7 @@ library(purrr)
 ```{r}
 path <- "sim/thesis_sim/"
 # file <- "S4_2_1_T50_M500.rds"
-file <- "S36_6_1_T50_M500.rds"
+file <- "S100_10_3_1_dense_T50_M500.rds"
 
 result_list <- readRDS(paste0(path, file))
 h <- 4
@@ -83,9 +83,9 @@ MSE_ts <- transform_sim_MSE(MSE, F)
 # % improv plot
 # average first, then compute % change later
 MSE_ts |>
-#   filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
+  # filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
   filter(!grepl("hresid", .model)) |>
-  filter(.model != "hresid_mint_n_hcov") |>
+  # filter(.model != "hresid_mint_n_hcov") |>
   group_by(series, h) |>
   mutate(
     base_MSE = MSE[.model == "base"]
