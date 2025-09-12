@@ -170,10 +170,9 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
   e_hresid[["mint_n_sv"]][1, ] <- e_hresid[["mint_n_hcov"]][1, ] <- e$mint_n[1, ]
 
   for (h_i in 2:h) {
-    
+    # get the h-step-ahead in-sample fitted values
     fit_augment_h <- augment(fit, h = h_i) |> 
       select(series, .fitted)
-
     y_hat_h <- fit_augment_h |>
       pivot_wider(names_from = series, values_from = .fitted, names_sort = FALSE) |>
       as_tibble() |>
@@ -182,14 +181,13 @@ run <- function(A = NULL, Sigma = NULL, message = F) {
 
     # max number of NAs in each column
     na_length <- max(colSums(is.na(y_hat_h)))
-
     y_h <- y[(na_length + 1):nrow(y), , drop = FALSE] # remove the first `na_length` rows
     y_hat_h <- y_hat_h[(na_length + 1):nrow(y_hat_h), , drop = FALSE] # remove the first `na_length` rows
 
     base_fc_h <- base_fc[h_i, , drop = FALSE] # a row vector of the h-step-ahead forecasts
     actual_h <- actual[h_i, , drop = FALSE]
 
-    # variance of h-step-ahead in-sample residuals
+    # standard dev. of h-step-ahead in-sample residuals
     D_half_h <- diag(sqrt(diag(
       compute_cov_matrix(y_h - y_hat_h, zero_mean = TRUE)
     ))) # diagonal matrix
