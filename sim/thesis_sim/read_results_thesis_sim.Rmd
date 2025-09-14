@@ -122,9 +122,9 @@ MSE_ts |>
 ```
 
 ```{r}
-score_list <- readRDS("sim/thesis_sim/scores_S100_10_3_1_sparse46_T50_M500.rds")
+# score_list <- readRDS("sim/thesis_sim/scores_S100_10_3_1_sparse46_T50_M500.rds")
 
-score_df <- score_list$crps |> 
+score_df <- result_winklers_80 |> 
   transform_sim_MSE(F) |> 
   # change column name "h" to "iter", "MSE" to "score"
   rename(iter = h, score = MSE)

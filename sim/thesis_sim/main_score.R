@@ -86,10 +86,10 @@ energy_score_from_samples <- function(samples, actual) {
 
 # Load and wrangle data -------------------------------
 path <- "sim/thesis_sim/"
-file <- "S100_10_3_1_sparse46_T50_M500.rds"
+file <- "S4_2_1_T300_M500.rds"
 
 result_list <- readRDS(paste0(path, file))
-params <- readRDS("sim/thesis_sim/params_S100_10_3_1_sparse46.rds")
+params <- readRDS("sim/thesis_sim/params_S4_2_1.rds")
 
 S <- params$S
 
@@ -197,4 +197,4 @@ save_obj <- list(
   crps = result_crps,
   energy = result_energy
 )
-saveRDS(save_obj, paste0(path, "scores_S100_10_3_1_sparse46_T50_M500.rds"))
+saveRDS(save_obj, paste0(path, "scores_S4_2_1_T300_M500.rds"))
