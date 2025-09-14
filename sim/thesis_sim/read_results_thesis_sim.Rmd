@@ -24,12 +24,12 @@ library(ReconCov)
 library(purrr)
 ```
 
-
+# Load and Wrangle
 
 ```{r}
 path <- "sim/thesis_sim/"
 # file <- "S4_2_1_T50_M500.rds"
-file <- "S100_10_3_1_dense_T50_M500.rds"
+file <- "S100_10_3_1_sparse46_T50_M500.rds"
 
 result_list <- readRDS(paste0(path, file))
 h <- 4
@@ -45,7 +45,7 @@ flatten_e_list <- function(e_list) {
     if (is.list(obj) && all(vapply(obj, is.matrix, logical(1)))) {
       ## e.g. name == "mint_shr_pc", obj contains K1 … K20
       for (k in names(obj)) {
-        out[[paste(name, k, sep = "_")]] <- obj[[k]]   # “mint_shr_pc_K1”, …
+        out[[k]] <- obj[[k]]   # “mint_shr_pc_K1”, …
       }
     } else {
       out[[name]] <- obj                               # “base”, “ols”, …
@@ -76,6 +76,7 @@ SSE_cum <- Reduce(
 MSE <- lapply(SSE_cum, function(mat) mat / M)
 ```
 
+# Plotting
 
 ```{r}
 MSE_ts <- transform_sim_MSE(MSE, F)
@@ -84,7 +85,7 @@ MSE_ts <- transform_sim_MSE(MSE, F)
 # average first, then compute % change later
 MSE_ts |>
   # filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
-  filter(!grepl("hresid", .model)) |>
+  filter(!grepl("hcov|sv", .model)) |>
   # filter(.model != "hresid_mint_n_hcov") |>
   group_by(series, h) |>
   mutate(
@@ -118,4 +119,75 @@ MSE_ts |>
 #   ggplot(aes(x = h, y = pct_change, color = .model)) +
 #     geom_line() +
 #     theme_minimal()
+```
+
+```{r}
+score_list <- readRDS("sim/thesis_sim/scores_S100_10_3_1_sparse46_T50_M500.rds")
+
+score_df <- score_list$crps |> 
+  transform_sim_MSE(F) |> 
+  # change column name "h" to "iter", "MSE" to "score"
+  rename(iter = h, score = MSE)
+
+# wrangle
+{
+  # filter pc2 models
+  score_df <- score_df %>%
+    filter(!grepl("K2", .model)) |> # remove pc2 models
+    filter(.model != "base_shr") |> 
+    filter(.model != "mint_sample")
+  # % improvements per series
+  score_df <- score_df |>
+    group_by(series, iter) |>
+    mutate(
+      base_score = score[.model == "base"]
+    ) |>
+    ungroup() |>
+    mutate(pct_change_per_series = (score - base_score) / base_score * 100)
+}
+```
+
+```{r}
+score_label <- "W95"
+score_df |> 
+  group_by(.model) |> 
+  summarise(
+    pct_change_avg = mean(pct_change_per_series)
+  ) |> 
+  ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
+    geom_col() +
+    labs(x = "Model", y = "% improvements",
+         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+         subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
+    theme_minimal()
+```
+
+```{r}
+{
+  energy_df <- result_energy[,1:11] |> 
+    as_tibble(rownames = "iter") |>
+    pivot_longer(-iter, names_to = ".model", values_to = "score") |>
+    mutate(iter = as.integer(iter))
+  # pct change
+  energy_df <- energy_df |> 
+    group_by(iter) |>
+    mutate(
+      base_score = score[.model == "base"],
+      pct_change_per_series = (score - base_score) / base_score * 100
+    )
+}
+# overall energy score per model
+energy_df |> 
+  group_by(.model) |> 
+  summarise(
+    mean_score = mean(score),
+    pct_change_avg = mean(pct_change_per_series)
+  ) |>
+  ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
+    geom_col() +
+    labs(x = "Model", y = "% improvements",
+         title = "Average of % relative improvements in Energy Score compared to Base",
+         subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016") +
+    theme_minimal()
+
 ```
