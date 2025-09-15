@@ -35,18 +35,18 @@ path <- "D:/Github/tourism_cluster/results/"
 path_newcov <- "D:/Github/tourism_cluster/results_newcov/" # results with new cov
 
 M <- 133
+M <- M - 3*12
 
 result_list <- list()
 for (i in 1:M) {
-  if (i == 19) next # iteration 19 has error
+  # if (i == 19) next # iteration 19 has error
   result <- readRDS(paste0(path_newcov, "result_", i, ".rds"))
-  result
+  # result
   # result_list[[i]] <- result
   result_list[[i]] <- result[-3] # not taking the base fitted models
 }
-result_list <- result_list[-19]
+# result_list <- result_list[-19]
 
-M <- M - 3*12 - 1 # -1 for the removed iteration 19
 result_list_truncated <- result_list[1:M] # truncate to first 120 iterations
 
 # flatten out the sublist in `e`
@@ -111,12 +111,8 @@ MSE_ts |> group_by(.model, h) |>
     labs(x = "Horizon", y = "MSE") +
     theme_minimal()
 
-# % improv plot
-MSE_ts |>
-  # filter models
-  # filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
-  filter(!grepl("_pc_", .model)) |>
-  # filter(grepl("mint_n", .model)) |>
+plot_ts <- MSE_ts |>
+  filter(!grepl("K5|K10|K20", .model)) |>
   group_by(series, h) |>
   mutate(
     base_MSE = MSE[.model == "base"]
@@ -127,15 +123,74 @@ MSE_ts |>
     MSE = mean(MSE),
     base_MSE = mean(base_MSE),
     pct_change = (MSE - base_MSE) / base_MSE * 100
-  ) |>
+  )
+
+# % improv plot
+plot_ts |>
   ggplot(aes(x = h, y = pct_change, color = .model)) +
   geom_line() +
   labs(x = "Horizon", y = "% improvements",
        title = "% relative improvements in MSE compared to Base",
-       subtitle = "training size = 120, iterations = 96") +
+       subtitle = "training size = 120, iterations = 96 (till 2016)") +
+  scale_y_continuous(limits = c(-10, 0.2)) +
   theme_minimal()
+
+
+# heatmap
+plot_ts |> 
+  filter(.model != "base") |> 
+  # rank 
+
+  ggplot(aes(x = h, y = .model, fill = pct_change)) +
+    geom_tile() +
+    scale_fill_gradient2(low = "red", mid = "white", midpoint = 0) +
+    labs(x = "Horizon", y = "Model",
+         title = "% relative improvements in MSE compared to Base",
+         subtitle = "training size = 120, iterations = 96 (till 2016)") +
+    theme_minimal()
+
+
+# # avg % improv plot
+# MSE_ts |>
+#   filter(!grepl("K5|K10|K20", .model)) |>
+#   group_by(series, h) |>
+#   mutate(
+#     base_MSE = MSE[.model == "base"],
+#     pct_change_per_series = (MSE - base_MSE) / base_MSE * 100
+#   ) |>
+#   ungroup() |>
+#   group_by(.model, h) |>
+#   summarise(
+#     pct_change = mean(pct_change_per_series)
+#   ) |>
+#   ggplot(aes(x = h, y = pct_change, color = .model)) +
+#     geom_line() +
+#     labs(x = "Horizon", y = "Average % improvements",
+#          title = "Average % relative improvements in MSE compared to Base",
+#          subtitle = "training size = 120, iterations = 96") +
+#     theme_minimal()
+
 ```
 
+
+```{r}
+# # average the % improv per series
+# improv_list <- list()
+
+# for (i in 1:length(result_list_truncated)) {
+#   e_list <- flatten_e_list(result_list_truncated[[i]]$e)
+#   for (model in names(e_list)) {
+#     improv <- (e_list[[model]]^2 - e_list$base^2) / e_list$base^2 * 100
+#     # average across horizons
+#     improv <- rowMeans(improv)
+#     improv_list[[model]] <- rbind(
+#       improv_list[[model]],
+#       improv
+#     )
+#   }
+# }
+# THIS NOT WORKS, because some % improv are super huge (even Inf) which dominate the negative ones (largest negative improv is -100%)
+```
 
 
 
@@ -193,10 +248,10 @@ MSE_ts <- MSE_ts %>%
 # % improv plot by level
 MSE_ts |>
   # # # filter models
-  filter(!grepl("_pc_", .model)) |>
-  # filter(!grepl("mint_shr", .model)) |> 
+  filter(!grepl("K5|K10|K20", .model)) |>
+  filter(grepl("sv|hcov|base", .model)) |> 
   # filter(.model == "base" | grepl("K1", .model)) |>
-#   filter(.model %in% c("base", "ols", "mint_n", "mint_shr")) |>
+  # filter(.model %in% c("base", "ols", "mint_n", "mint_shr")) |>
   group_by(series, h) |>
   mutate(
     base_MSE = MSE[.model == "base"]
@@ -208,7 +263,6 @@ MSE_ts |>
     base_MSE = mean(base_MSE),
     pct_change = (MSE - base_MSE) / base_MSE * 100
   ) |>
-  filter(.model != "mint_sample") %>% 
   ggplot(aes(x = h, y = pct_change, color = .model)) +
     geom_line() +
     labs(x = "Horizon", y = "% improvements",

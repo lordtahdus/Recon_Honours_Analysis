@@ -38,12 +38,12 @@ M <- 133
 
 result_list_full <- list()
 for (i in 1:M) {
-  if (i == 19) next # iteration 19 has error
+  # if (i == 19) next # iteration 19 has error
   result <- readRDS(paste0(path, "result_", i, ".rds")) 
   # result_list[[i]] <- result
   result_list_full[[i]] <- result[-3] # not taking the base fitted models
 }
-result_list <- result_list_full[-19]
+# result_list <- result_list_full[-19]
 
 # remove the last 3 years of results
 M <- M - 3*12 - 1 # -1 for the removed iteration 19
@@ -475,7 +475,7 @@ result_winklers_80 <- readRDS("tourism/job/results/result_winklers_80_new.rds")
 result_winklers_95 <- readRDS("tourism/job/results/result_winklers_95_new.rds")
 result_crps <- readRDS("tourism/job/results/result_crps_new.rds")
 
-score_df <- result_crps |> 
+score_df <- result_winklers_95 |> 
   transform_sim_MSE(F) |> 
   # change column name "h" to "iter", "MSE" to "score"
   rename(iter = h, score = MSE)
@@ -493,9 +493,9 @@ score_df <- result_crps |>
         labels = str_replace_all(desired_order, "_", " ")  # replace "_" with " "
       )
     )
-  # filter pc2 models
-  score_df <- score_df %>%
-    filter(!grepl("K2", .model)) # remove pc2 models
+  # # filter pc2 models
+  # score_df <- score_df %>%
+  #   filter(!grepl("K2", .model)) # remove pc2 models
 
   # filter last 3 years
   score_df <- score_df %>%
@@ -571,19 +571,27 @@ score_label <- "W95"
 score_df |> 
   group_by(.model) |> 
   summarise(
-    pct_change_avg = mean(pct_change_per_series)
+    pct_change_avg = mean(pct_change_per_series),
+    # capped at 10%
+    pct_change_avg = pmin(pct_change_avg, 10),
+    capped = ifelse(pct_change_avg >= 10, 1, 0)
   ) |> 
   ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
     geom_col() +
     labs(x = "Model", y = "% improvements",
          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
          subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
+    # labels on top of bars if capped
+    geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
     theme_minimal()
 
 score_df |> 
   group_by(.model, level) |> 
   summarise(
     pct_change_avg = mean(pct_change_per_series)
+    # capped at 10%
+    # pct_change_avg = pmin(pct_change_avg, 10),
+    # capped = ifelse(pct_change_avg >= 10, 1, 0)
   ) |> 
   ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
     geom_col(position = "dodge") +
@@ -591,6 +599,8 @@ score_df |>
          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
          subtitle = "Interpret: negative values mean improvement. Avg over pct") +
     facet_wrap(~ level, ncol=2, scales = "free_y") +
+    # labels on top of bars if capped
+    # geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5, position = position_dodge(width = 0.9)) +
     theme_minimal()  
 ```
 
@@ -605,11 +615,11 @@ plot_df <- score_df |>
   group_by(series, level, .model) |> 
   summarise(pct_change_avg = mean(pct_change_per_series), .groups = "drop") |>
   # set every pct >= x to x
-  mutate(pct_change_avg = pmin(pct_change_avg, 10)) |> 
+  mutate(pct_change_avg = pmin(pct_change_avg, 30)) |> 
   # sort series by pct_change_avg of mint_n_pc_K1
   # mutate(series = fct_reorder(series, pct_change_avg[.model == "mint_n_pc_K1"])) |>  
   # filter(level == "Region") |>
-  filter(!grepl("K2", .model)) |> 
+  filter(!grepl("K2|ols_shr", .model)) |> 
   mutate(level_group = case_when(
     level %in% c("Australia", "Australia by Purpose", "State", "State by Purpose") ~ "1.High levels",
     level %in% c("Zone", "Zone by Purpose") ~ "2.Zone & Zone by Purpose",
