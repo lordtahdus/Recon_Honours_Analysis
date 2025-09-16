@@ -76,8 +76,8 @@ SSE_cum <- Reduce(
 MSE <- lapply(SSE_cum, function(mat) mat / M)
 ```
 
-# Plotting
 
+# Plotting
 ```{r}
 MSE_ts <- transform_sim_MSE(MSE, F)
 
