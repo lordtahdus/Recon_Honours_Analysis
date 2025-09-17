@@ -16,6 +16,8 @@ library(fable)
 library(feasts)
 library(tsibble)
 library(dplyr)
+library(tibble)
+library(fmsb) #radarchart
 
 # library(devtools)
 # load_all()
@@ -596,6 +598,7 @@ score_df |>
     ) +
     theme_minimal()
 
+# per level
 score_df |> 
   filter(rule == score_label) |>
   group_by(family, model_label, level) |> 
@@ -625,10 +628,54 @@ score_df |>
     theme_minimal() +
     # rotate the x axis labels
     theme(axis.text.x = element_text(angle = 45, hjust = 0.7))
+
+
+# Consistent plotting:
+# average across series per iteration -> compute % improv per iter -> average across iter
+score_label <- "CRPS"
+score_df |> 
+  filter(rule == score_label) |>
+  # average across series per iteration & compute % improv per iter
+  group_by(family, model_label, iter) |>
+  summarise(
+    score = mean(score),
+    base_score = mean(base_score),
+    pct_change = (score - base_score) / base_score * 100
+  ) |>
+  ungroup() |>
+  # average across iter
+  group_by(family, model_label) |>
+  summarise(
+    pct_change_avg = mean(pct_change),
+    # capped at 10%
+    pct_change_avg = pmin(pct_change_avg, 10),
+    capped = ifelse(pct_change_avg >= 10, 1, 0)
+  ) |>
+  filter(model_label != "Base") |>
+  ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
+    geom_col() +
+    labs(x = "Model", y = "% improvements",
+         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+         subtitle = "Interpret: negative values indicate improvement. Consistent avg and % improv") +
+    # labels on top of bars if capped
+    geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
+    scale_fill_manual(
+      name = "Family",
+      values = c(
+        "OLS"    = "#d1d400ff",  # black
+        "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
+        "MinT-N" = "#9500c2ff"   # purple
+      )
+    ) +
+    theme_minimal()
+
+
 ```
 
 ```{r}
 #radar chart
+
+# ----- inconsistent % improv -----
 radar_df <- score_df |> 
   filter(.model %in% c("mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |>
   group_by(.model, rule) |>
@@ -647,6 +694,42 @@ radar_df <- cbind(
     filter(.model %in% c("mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |> 
     pull(pct_change_avg)
 )
+
+# ----- consistent % improv -----
+radar_df <- score_df |> 
+  filter(.model %in% c("mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |>
+  # average across series per iteration & compute % improv per iter
+  group_by(model_label, rule, iter) |>
+  summarise(
+    score = mean(score),
+    base_score = mean(base_score),
+    pct_change = (score - base_score) / base_score * 100
+  ) |>
+  ungroup() |>
+  # average across iter
+  group_by(model_label, rule) |>
+  summarise(
+    pct_change_avg = mean(pct_change)
+  ) |>
+  ungroup() |>
+  filter(model_label != "Base") |>
+  pivot_wider(names_from = rule, values_from = pct_change_avg) |>
+  column_to_rownames("model_label")
+
+radar_df <- cbind(
+  radar_df,
+  Energy = energy_df |> 
+    filter(.model %in% c("mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |> 
+    group_by(model_label) |> 
+    summarise(
+      mean_score = mean(score),
+      pct_change_avg = mean(pct_change_per_series)
+    ) |> 
+    pull(pct_change_avg)
+)
+
+
+
 
 radar_df <- -radar_df # flip sign so larger is better outward
 
@@ -681,35 +764,6 @@ legend("topright", legend = rownames(radar_df),
        col = cols, lty = 1, lwd = 2, bty = "n", cex = 0.9)
 }
 
-
-
-# Flip sign so larger is better outward, but we'll label with negatives
-radar_plot <- -radar_df
-
-# Range: -8..-2  => after flip becomes +8..+2
-top_pos <- rep(8, ncol(radar_plot))   # corresponds to -8 (best) on labels
-bot_pos <- rep(2, ncol(radar_plot))   # corresponds to -2 (worst) on labels
-plot_df2 <- rbind(bot_pos, top_pos, radar_plot)  # min row first, then max row
-
-# Build ring labels as negatives, equally spaced
-labs <- as.character(seq(-2, -8, by = -2))
-seg_n <- length(labs)                 # ensure seg matches label count
-
-fmsb::radarchart(
-  plot_df2,
-  axistype = 1,
-  seg = seg_n,
-  caxislabels = labs,                 # show negative labels
-  cglcol = "grey80", cglty = 1, cglwd = 0.8,
-  axislabcol = "grey30",
-  pcol  = c("#1B9E77","#6A51A3","#66A61E","#E6AB02"),
-  pfcol = scales::alpha(c("#1B9E77","#6A51A3","#66A61E","#E6AB02"), 0.2),
-  plwd  = 2
-)
-
-legend("topright", legend = rownames(radar_df),
-       col = c("#1B9E77","#6A51A3","#66A61E","#E6AB02"),
-       lty = 1, lwd = 2, bty = "n")
 ```
 
 

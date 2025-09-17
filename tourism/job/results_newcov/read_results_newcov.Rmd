@@ -218,6 +218,85 @@ plot_ts |>
 #   }
 # }
 # THIS NOT WORKS, because some % improv are super huge (even Inf) which dominate the negative ones (largest negative improv is -100%)
+
+
+# average across series per iteration -> compute % improv per iter -> average across iter
+improv_df <- tibble(
+  .model = character(0),
+  iter = integer(0),
+  h = integer(0),
+  MSE = numeric(0),
+  pct_change = numeric(0)
+)
+model_names <- all_model_names[!grepl("K5|K10|K20", all_model_names)]
+
+for (i in 1:length(result_list_truncated)) {
+  e_list <- flatten_e_list(result_list_truncated[[i]]$e)
+  # average across series for base model
+  base_MSE <- rowMeans(e_list$base^2)
+  for (model in model_names) {
+    # average across series each horizon, iteration
+    MSE <- rowMeans(e_list[[model]]^2)
+    pct_change <- (MSE - base_MSE) / base_MSE * 100
+    improv_df <- rbind(
+      improv_df,
+      tibble(
+        .model = rep(model, length(MSE)),
+        iter = rep(i, length(MSE)),
+        h = 1:length(MSE),
+        MSE = MSE,
+        pct_change = pct_change
+      )
+    )
+  }
+}
+
+# average across iterations
+improv_df <- improv_df |> 
+  group_by(.model, h) |> 
+  summarise(
+    MSE = mean(MSE),
+    pct_change = mean(pct_change)
+  ) |> 
+  ungroup()
+
+improv_df <- encode_recon_models(improv_df)
+
+# plotting
+improv_df |>
+  ggplot(aes(x = h, y = pct_change, color = family, linetype = variant_type, shape = shape_lab)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(alpha = 0.85, size = 2.6, na.rm = TRUE) +
+  recon_scales +
+  labs(x = "Horizon", y = "% improvements",
+       title = "Average % relative improvements in MSE compared to Base",
+       subtitle = "training size = 120, iterations = 97 (till 2016). Avg series -> % improv per iter -> avg") +
+  # scale_y_continuous(limits = c(-10, 0.2)) +
+  theme_minimal()
+
+# heatmap
+improv_df |> 
+  # best models per h
+  filter(.model != "base") |> 
+  group_by(h) |>
+  mutate(
+    is_best = pct_change == min(pct_change),
+    # rescale to (0 to -1)
+    scaled_pct_change = scales::rescale(pct_change, to = c(-100, 0))
+  ) |>
+  filter(.model != "base") |> 
+  ggplot(aes(
+    x = h, y = fct_rev(model_label), 
+    # fill = pct_change
+    fill = scaled_pct_change
+  )) +
+    geom_tile() +
+    geom_text(aes(label = ifelse(is_best, "*", "")), color = "black", size = 8) +
+    scale_fill_gradient2(low = "#ca2b33ff", mid = "#f7ffadff", midpoint = 0) +
+    labs(x = "Horizon", y = "Model",
+         title = "Average % relative improvements in MSE compared to Base",
+         subtitle = "Scaled the range to (-1,0). Worst model 0, Best model -1. Avg series -> % improv per iter -> avg") +
+    theme_minimal()
 ```
 
 
