@@ -22,6 +22,10 @@ library(dplyr)
 # load_all()
 library(ReconCov)
 library(purrr)
+library(stringr)
+source("R/helpers.R")
+library(fmsb) # radarplot
+library(tibble)
 ```
 
 # Load and Wrangle
@@ -29,11 +33,15 @@ library(purrr)
 ```{r}
 path <- "sim/thesis_sim/"
 # file <- "S4_2_1_T50_M500.rds"
-file <- "S100_10_3_1_sparse46_T50_M500.rds"
+file <- "S100_10_3_1_sparse46_T300_M500.rds"
 
 result_list <- readRDS(paste0(path, file))
 h <- 4
 M <- 500
+
+params <- readRDS(paste0(path, "params_", strsplit(file, "_T")[[1]][1], ".rds"))
+S <- params$S
+T <- strsplit(strsplit(file, "_T")[[1]][2], "_")[[1]][1] |> as.integer()
 
 # flatten out the sublist in `e`
 flatten_e_list <- function(e_list) {
@@ -54,7 +62,7 @@ flatten_e_list <- function(e_list) {
   out                                             # all matrices at top level
 }
 
-all_model_names <- names(flatten_e_list(result_list[[1]]$e))
+{all_model_names <- names(flatten_e_list(result_list[[1]]$e))
 series_names <- rownames(S)
 SSE_cum <- setNames(
   lapply(all_model_names, function(name) {
@@ -62,6 +70,10 @@ SSE_cum <- setNames(
   }),
   all_model_names
 )
+
+# we only plot these models
+model_names <- all_model_names[!grepl("K5|K10|K20|sample", all_model_names)]
+
 # need to square the errors first
 SSE_cum <- Reduce(
   function(acc, res) {
@@ -71,21 +83,56 @@ SSE_cum <- Reduce(
   result_list,
   init = SSE_cum
 )
+MSE <- lapply(SSE_cum, function(mat) mat / M)}
+```
 
 
-MSE <- lapply(SSE_cum, function(mat) mat / M)
+```{r}
+# average across series per iteration -> compute % improv per iter -> average across iter
+# result_df stores % improv per iter for each model, horizon
+result_df <- tibble(
+  .model = character(0),
+  iter = integer(0),
+  h = integer(0),
+  MSE = numeric(0),
+  pct_change = numeric(0)
+)
+
+for (i in 1:length(result_list)) {
+  e_list <- flatten_e_list(result_list[[i]]$e)
+  # average across series for base model
+  base_MSE <- rowMeans(e_list$base^2)
+  for (model in model_names) {
+    # average across series each horizon, iteration
+    model_MSE <- rowMeans(e_list[[model]]^2)
+    pct_change <- (model_MSE - base_MSE) / base_MSE * 100
+    result_df <- rbind(
+      result_df,
+      tibble(
+        .model = rep(model, length(model_MSE)),
+        iter = rep(i, length(model_MSE)),
+        h = 1:length(model_MSE),
+        MSE = model_MSE,
+        pct_change = pct_change
+      )
+    )
+  }
+}
 ```
 
 
 # Plotting
+
+## Point
 ```{r}
 MSE_ts <- transform_sim_MSE(MSE, F)
 
 # % improv plot
 # average first, then compute % change later
-MSE_ts |>
+cap <- 5
+plot_df <- MSE_ts |>
   # filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
-  filter(!grepl("hcov|sv", .model)) |>
+  filter(.model %in% model_names) |>
   # filter(.model != "hresid_mint_n_hcov") |>
   group_by(series, h) |>
   mutate(
@@ -98,9 +145,33 @@ MSE_ts |>
     base_MSE = mean(base_MSE),
     pct_change = (MSE - base_MSE) / base_MSE * 100
   ) |>
-  ggplot(aes(x = h, y = pct_change, color = .model)) +
-  geom_line() +
-  theme_minimal()
+  encode_recon_models() |> 
+  # cap pct_change upper 10%
+  mutate(
+    capped = pct_change >= cap,
+    capped_pct_change = pmin(pct_change, cap)
+  )
+
+plot_df |> 
+  ggplot(aes(x = h, y = capped_pct_change, color = family, shape = shape_lab, linetype = variant_type)) +
+    geom_line(linewidth = 1.2) +
+    geom_point(alpha = 0.85, size = 2.6, na.rm = TRUE) +
+    recon_scales +
+    # label actual values for capped points
+    geom_text(
+      data = subset(plot_df, pct_change >= cap),
+      aes(label = round(pct_change, 1)),
+      vjust = -0.5, color = "black", size = 3
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Forecast Horizon", y = "% improvements",
+      title = paste(
+        "Average of % relative improvements in MSE compared to Base.", 
+        strsplit(file, "_M")[[1]][1]
+      ),
+      subtitle = "Interpret: negative values indicate improvement. Avg over series and iterations"
+    )
 
 # # compute % per series first, then average
 # MSE_ts |>
@@ -119,21 +190,62 @@ MSE_ts |>
 #   ggplot(aes(x = h, y = pct_change, color = .model)) +
 #     geom_line() +
 #     theme_minimal()
+
+# consistent % improv:
+# Compute MSE across series each iterations → % improv each iterations → average across 500 iterations
+cap <- 6
+plot_df <- result_df |> 
+  filter(.model %in% model_names) |>
+  group_by(.model, h) |>
+  summarise(
+    MSE = mean(MSE),
+    pct_change = mean(pct_change)
+  ) |>
+  encode_recon_models() |> 
+  # cap pct_change upper 10%
+  mutate(
+    capped = pct_change >= cap,
+    capped_pct_change = pmin(pct_change, cap)
+  )
+
+plot_df |>
+  ggplot(aes(x = h, y = capped_pct_change, color = family, shape = shape_lab, linetype = variant_type)) +
+    geom_line(linewidth = 1.2) +
+    geom_point(alpha = 0.85, size = 2.6, na.rm = TRUE) +
+    recon_scales +
+    # label actual values for capped points
+    geom_text(
+      data = subset(plot_df, pct_change >= cap),
+      aes(label = round(pct_change, 1)),
+      vjust = -0.5, color = "black", size = 3
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Forecast Horizon", y = "% improvements",
+      title = paste(
+        "Average of % relative improvements in MSE compared to Base.", 
+        strsplit(file, "_M")[[1]][1]
+      ),
+      subtitle = "Interpret: negative values indicate improvement. Avg across %improv from 500 iterations"
+    )
 ```
 
+
+## Probabilistic
+
 ```{r}
-# score_list <- readRDS("sim/thesis_sim/scores_S100_10_3_1_sparse46_T50_M500.rds")
+file <- "S100_10_3_1_sparse46_T50_M500.rds"
+score_list <- readRDS(paste0(path, "scores_", file))
 
-score_df <- result_winklers_80 |> 
-  transform_sim_MSE(F) |> 
-  # change column name "h" to "iter", "MSE" to "score"
-  rename(iter = h, score = MSE)
-
-# wrangle
-{
+get_score_df <- function(mat) {
+  score_df <- mat |> 
+    transform_sim_MSE(F) |> 
+    # change column name "h" to "iter", "MSE" to "score"
+    rename(iter = h, score = MSE)
+  
+  # wrangle
   # filter pc2 models
-  score_df <- score_df %>%
-    filter(!grepl("K2", .model)) |> # remove pc2 models
+  score_df <- score_df |> 
     filter(.model != "base_shr") |> 
     filter(.model != "mint_sample")
   # % improvements per series
@@ -144,27 +256,108 @@ score_df <- result_winklers_80 |>
     ) |>
     ungroup() |>
     mutate(pct_change_per_series = (score - base_score) / base_score * 100)
+
+  encode_recon_models(score_df) |> 
+    select(-method_raw, -shape_lab, -linetype_lab, -variant_type)
 }
+score_df <- get_score_df(score_list$w80) |> mutate(rule = "W80")
+score_df <- rbind(score_df, get_score_df(score_list$w95) |> mutate(rule = "W95"))
+score_df <- rbind(score_df, get_score_df(score_list$crps) |> mutate(rule = "CRPS"))
 ```
 
 ```{r}
+# score_label <- "W95"
+
+# # average scores -> % improv
+# score_df |>
+#   filter(rule == score_label) |>
+#   group_by(family, model_label) |>
+#   summarise(
+#     score = mean(score),
+#     base_score = mean(base_score),
+#     pct_change = (score - base_score) / base_score * 100
+#   ) |> 
+#   filter(model_label != "Base") |>
+#   ggplot(aes(x = model_label, y = pct_change, fill = family)) +
+#     geom_col() +
+#     labs(x = "Model", y = "% improvements",
+#          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+#          subtitle = "Interpret: negative values indicate improvement. Pct over Avg") +
+#     scale_fill_manual(
+#       name = "Family",
+#       values = c("OLS" = "#d1d400ff", "MinT-S" = "#00c086ff", "MinT-N" = "#9500c2ff")
+#     ) +
+#     theme_minimal()
+
+# # pct improv per series -> average
+# score_df |> 
+#   filter(rule == score_label) |>
+#   group_by(family, model_label) |> 
+#   summarise(
+#     pct_change_avg = mean(pct_change_per_series)
+#   ) |> 
+#   filter(model_label != "Base") |>
+#   ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
+#     geom_col() +
+#     labs(x = "Model", y = "% improvements",
+#          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+#          subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
+#     # labels on top of bars if capped
+#     geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
+#     scale_fill_manual(
+#       name = "Family",
+#       values = c(
+#         "OLS"    = "#d1d400ff",  # black
+#         "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
+#         "MinT-N" = "#9500c2ff"   # purple
+#       )
+#     ) +
+#     theme_minimal()
+
+
+# Consistent plotting:
+# average across series per iteration -> compute % improv per iter -> average across iter
 score_label <- "W95"
 score_df |> 
-  group_by(.model) |> 
+  filter(rule == score_label) |>
+  # average across series per iteration & compute % improv per iter
+  group_by(family, model_label, iter) |>
   summarise(
-    pct_change_avg = mean(pct_change_per_series)
-  ) |> 
-  ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
+    score = mean(score),
+    base_score = mean(base_score),
+    pct_change = (score - base_score) / base_score * 100
+  ) |>
+  ungroup() |>
+  # average across iter
+  group_by(family, model_label) |>
+  summarise(
+    pct_change_avg = mean(pct_change),
+    # capped at 10%
+    pct_change_avg = pmin(pct_change_avg, 10),
+    capped = ifelse(pct_change_avg >= 10, 1, 0)
+  ) |>
+  filter(model_label != "Base") |>
+  ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
     geom_col() +
     labs(x = "Model", y = "% improvements",
-         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-         subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
+         title = paste("Average of % relative improvements in", score_label, "compared to Base", strsplit(file, "_M")[[1]][1]),
+         subtitle = "Interpret: negative values indicate improvement. Consistent avg and % improv") +
+    # labels on top of bars if capped
+    geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
+    scale_fill_manual(
+      name = "Family",
+      values = c(
+        "OLS"    = "#d1d400ff",
+        "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
+        "MinT-N" = "#9500c2ff"   # purple
+      )
+    ) +
     theme_minimal()
 ```
 
 ```{r}
 {
-  energy_df <- result_energy[,1:11] |> 
+  energy_df <- score_list$energy[,1:11] |> 
     as_tibble(rownames = "iter") |>
     pivot_longer(-iter, names_to = ".model", values_to = "score") |>
     mutate(iter = as.integer(iter))
@@ -174,7 +367,8 @@ score_df |>
     mutate(
       base_score = score[.model == "base"],
       pct_change_per_series = (score - base_score) / base_score * 100
-    )
+    ) |> 
+    encode_recon_models()
 }
 # overall energy score per model
 energy_df |> 
@@ -190,4 +384,81 @@ energy_df |>
          subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016") +
     theme_minimal()
 
+```
+
+
+### Radarplot
+
+```{r}
+# ----- consistent % improv -----
+radar_df <- score_df |> 
+  filter(.model %in% c("ols_shr", "mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |>
+  # average across series per iteration & compute % improv per iter
+  group_by(model_label, rule, iter) |>
+  summarise(
+    score = mean(score),
+    base_score = mean(base_score),
+    pct_change = (score - base_score) / base_score * 100
+  ) |>
+  ungroup() |>
+  # average across iter
+  group_by(model_label, rule) |>
+  summarise(
+    pct_change_avg = mean(pct_change)
+  ) |>
+  ungroup() |>
+  filter(model_label != "Base") |>
+  pivot_wider(names_from = rule, values_from = pct_change_avg) |>
+  column_to_rownames("model_label")
+
+radar_df <- cbind(
+  radar_df,
+  Energy = energy_df |> 
+    filter(.model %in% c("ols_shr", "mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |> 
+    group_by(model_label) |> 
+    summarise(
+      mean_score = mean(score),
+      pct_change_avg = mean(pct_change_per_series)
+    ) |> 
+    pull(pct_change_avg)
+)
+
+
+
+radar_df <- -radar_df # flip sign so larger is better outward
+
+{# --- 2) Add required max/min rows for fmsb::radarchart ---
+maxs <- apply(radar_df, 2, max, na.rm = TRUE)
+mins <- apply(radar_df, 2, min, na.rm = TRUE)
+mins <- pmin(mins, 0)  # ensure min is at most 0
+# pad the scale a bit so polygons don’t touch edges
+pad  <- 0.01 * (maxs - mins)
+scale_top <- maxs + pad
+scale_bot <- mins - pad
+
+plot_df <- rbind(scale_top, scale_bot, radar_df)
+
+# --- 3) Colors (one per method, in row order) ---
+cols <- c("#7b7b7bff","#1B9E77", "#6A51A3", "#66A61E", "#E6AB02")[seq_len(nrow(radar_df))]
+
+# --- 4) Draw radar chart ---
+radarchart(
+  plot_df,
+  axistype = 1,
+  pcol  = cols,
+  pfcol = scales::alpha(cols, 0.20),
+  plwd  = 2,
+  plty  = 1,
+  cglcol = "grey80", cglty = 1, cglwd = 0.8,
+  axislabcol = "grey30",
+  vlcex = 0.9
+)
+
+legend("topright", legend = rownames(radar_df),
+       col = cols, lty = 1, lwd = 2, bty = "n", cex = 0.9)
+}
+# add title
+title(main = paste("Radarplot of % improvements over Base", strsplit(file, "_M")[[1]][1]))
+# subtitle
+mtext("Scores are scaled to [0, max(-scores)], better improvement is further outward", side = 3, line = 0.5, cex = 0.8)
 ```
