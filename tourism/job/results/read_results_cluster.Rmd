@@ -736,6 +736,7 @@ radar_df <- -radar_df # flip sign so larger is better outward
 {# --- 2) Add required max/min rows for fmsb::radarchart ---
 maxs <- apply(radar_df, 2, max, na.rm = TRUE)
 mins <- apply(radar_df, 2, min, na.rm = TRUE)
+mins <- pmin(mins, 0) # ensure min is at most 0
 
 # pad the scale a bit so polygons don’t touch edges
 pad  <- 0.01 * (maxs - mins)
@@ -762,8 +763,11 @@ radarchart(
 
 legend("topright", legend = rownames(radar_df),
        col = cols, lty = 1, lwd = 2, bty = "n", cex = 0.9)
+# title
+title(main = "Average of % relative improvements compared to Base")
+# subtitle
+mtext("Interpret: larger values indicate better performance", side = 3, line = 0.5, cex = 0.8)
 }
-
 ```
 
 
