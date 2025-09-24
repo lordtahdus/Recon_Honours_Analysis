@@ -18,6 +18,7 @@ library(tsibble)
 library(dplyr)
 library(tibble)
 library(fmsb) #radarchart
+library(distributional)
 
 # library(devtools)
 # load_all()
@@ -50,7 +51,7 @@ for (i in 1:M) {
 # result_list <- result_list_full[-19]
 
 # remove the last 3 years of results
-M <- M - 3*12 - 1 # -1 for the removed iteration 19
+M <- M - 3*12 
 result_list <- result_list[1:M]
 
 # flatten out the sublist in `e`
@@ -598,36 +599,36 @@ score_df |>
     ) +
     theme_minimal()
 
-# per level
-score_df |> 
-  filter(rule == score_label) |>
-  group_by(family, model_label, level) |> 
-  summarise(
-    pct_change_avg = mean(pct_change_per_series)
-    # capped at 10%
-    # pct_change_avg = pmin(pct_change_avg, 10),
-    # capped = ifelse(pct_change_avg >= 10, 1, 0)
-  ) |> 
-  filter(model_label != "Base") |>
-  ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
-    geom_col(position = "dodge") +
-    labs(x = "Level", y = "% improvements",
-         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-         subtitle = "Interpret: negative values mean improvement. Avg over pct") +
-    facet_wrap(~ level, ncol=2, scales = "free_y") +
-    # markers on top of bars if capped, not using texts
-    # geom_point(data = . %>% filter(capped == 1), aes(x = model_label, y = 10 + 0.5), shape = 8, size = 3, color = "red") +
-    scale_fill_manual(
-      name = "Family",
-      values = c(
-        "OLS"    = "#d1d400ff",  # black
-        "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
-        "MinT-N" = "#9500c2ff"   # purple
-      )
-    ) +
-    theme_minimal() +
-    # rotate the x axis labels
-    theme(axis.text.x = element_text(angle = 45, hjust = 0.7))
+# # per level
+# score_df |> 
+#   filter(rule == score_label) |>
+#   group_by(family, model_label, level) |> 
+#   summarise(
+#     pct_change_avg = mean(pct_change_per_series)
+#     # capped at 10%
+#     # pct_change_avg = pmin(pct_change_avg, 10),
+#     # capped = ifelse(pct_change_avg >= 10, 1, 0)
+#   ) |> 
+#   filter(model_label != "Base") |>
+#   ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
+#     geom_col(position = "dodge") +
+#     labs(x = "Level", y = "% improvements",
+#          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+#          subtitle = "Interpret: negative values mean improvement. Avg over pct") +
+#     facet_wrap(~ level, ncol=2, scales = "free_y") +
+#     # markers on top of bars if capped, not using texts
+#     # geom_point(data = . %>% filter(capped == 1), aes(x = model_label, y = 10 + 0.5), shape = 8, size = 3, color = "red") +
+#     scale_fill_manual(
+#       name = "Family",
+#       values = c(
+#         "OLS"    = "#d1d400ff",  # black
+#         "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
+#         "MinT-N" = "#9500c2ff"   # purple
+#       )
+#     ) +
+#     theme_minimal() +
+#     # rotate the x axis labels
+#     theme(axis.text.x = element_text(angle = 45, hjust = 0.7))
 
 
 # Consistent plotting:
@@ -640,7 +641,7 @@ score_df |>
   summarise(
     score = mean(score),
     base_score = mean(base_score),
-    pct_change = (score - base_score) / base_score * 100
+    pct_change = (base_score-score) / base_score * 100,
   ) |>
   ungroup() |>
   # average across iter
@@ -656,7 +657,7 @@ score_df |>
     geom_col() +
     labs(x = "Model", y = "% improvements",
          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-         subtitle = "Interpret: negative values indicate improvement. Consistent avg and % improv") +
+         subtitle = "Interpret: positive values indicate improvement. Consistent avg and % improv") +
     # labels on top of bars if capped
     geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
     scale_fill_manual(
@@ -672,28 +673,28 @@ score_df |>
 
 ```
 
-```{r}
+```{r radar}
 #radar chart
 
-# ----- inconsistent % improv -----
-radar_df <- score_df |> 
-  filter(.model %in% c("mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |>
-  group_by(.model, rule) |>
-  summarise(pct_change_avg = mean(pct_change_per_series), .groups = "drop") |>
-  pivot_wider(names_from = rule, values_from = pct_change_avg) |>
-  column_to_rownames(".model")
+# # ----- inconsistent % improv -----
+# radar_df <- score_df |> 
+#   filter(.model %in% c("mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |>
+#   group_by(.model, rule) |>
+#   summarise(pct_change_avg = mean(pct_change_per_series), .groups = "drop") |>
+#   pivot_wider(names_from = rule, values_from = pct_change_avg) |>
+#   column_to_rownames(".model")
 
-radar_df <- cbind(
-  radar_df,
-  Energy = energy_df |> 
-    group_by(.model) |> 
-    summarise(
-      mean_score = mean(score),
-      pct_change_avg = mean(pct_change_per_series)
-    ) |> 
-    filter(.model %in% c("mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |> 
-    pull(pct_change_avg)
-)
+# radar_df <- cbind(
+#   radar_df,
+#   Energy = energy_df |> 
+#     group_by(.model) |> 
+#     summarise(
+#       mean_score = mean(score),
+#       pct_change_avg = mean(pct_change_per_series)
+#     ) |> 
+#     filter(.model %in% c("mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")) |> 
+#     pull(pct_change_avg)
+# )
 
 # ----- consistent % improv -----
 radar_df <- score_df |> 
@@ -768,6 +769,26 @@ title(main = "Average of % relative improvements compared to Base")
 # subtitle
 mtext("Interpret: larger values indicate better performance", side = 3, line = 0.5, cex = 0.8)
 }
+
+make_radar <- function(plot_df, radar_df, cols) {
+  fmsb::radarchart(
+    plot_df,
+    axistype = 1,
+    pcol  = cols,
+    pfcol = scales::alpha(cols, 0.20),
+    plwd  = 2,
+    plty  = 1,
+    cglcol = "grey80", cglty = 1, cglwd = 0.8,
+    axislabcol = "grey30",
+    vlcex = 0.9
+  )
+  legend("topright", legend = rownames(radar_df),
+         col = cols, lty = 1, lwd = 2, bty = "n", cex = 0.9)
+
+  recordPlot()  # <- returns a recordedplot
+}
+plot7 <- make_radar(plot_df, radar_df, cols)
+
 ```
 
 
@@ -842,7 +863,7 @@ y_sample = S * b_sample
 
 Calculate energy score from y_samples and actuals
 
-```{r}
+```{r helpers}
 coherent_draws <- function(mu_base, Sigma_base, S, G, m) {
   # mu: vector of base forecast means (all series)
   # Sigma: covariance matrix of base forecast (all series)
@@ -867,9 +888,7 @@ energy_score_from_samples <- function(samples, actual) {
 }
 ```
 
-
-
-```{r}
+```{r get energy score}
 library(distributional)
 
 M <- length(result_list_full)
@@ -948,9 +967,7 @@ for (i in 1:M) {
 }
 ```
 
-
-
-```{r}
+```{r wrangle energy score}
 # saveRDS(result_energy, "tourism/job/results/result_energy_10k.rds")
 
 readRDS("tourism/job/results/result_energy_10k.rds") -> result_energy
@@ -1028,6 +1045,268 @@ energy_df |>
         "MinT-N" = "#9500c2ff"   # purple
       )
     ) +
+    theme_minimal()
+
+```
+
+
+## Inspect MinT-Shr worse performance on W95
+
+```{r}
+i <- 1 # worse performance
+result <- result_list_full[[i]]
+e <- result$e |> flatten_e_list()
+resid <- result$resid
+
+# Get actual data
+y <- visnights_full |> 
+  as_tibble() |> 
+  arrange(State, Region) |>
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) |>
+  select(name, Nights, Month) |>
+  pivot_wider(names_from = name, values_from = Nights) |>
+  select(-Month) |>
+  as.matrix()
+y <- y[, rownames(S)]
+actual <- y[seq_dates$end[i] + 1 - start_date + 1, ] # 1-step ahead actuals
+
+W1_base <- compute_cov_matrix(resid, T)
+y_base <- actual - result$e[["base"]][1, ]
+
+W1_mintshr <- shrinkage_est(resid, result$W_shr[1])$cov
+y_recon <- actual - result$e[["mint_shr"]][1, ]
+P <- t(S) %*% solve(W1_mintshr)
+G <- solve(P %*% S) %*% P
+W1_recon <- S %*% G %*% W1_mintshr %*% t(G) %*% t(S)
+
+var_series <- tibble(
+  series = colnames(W1_recon),
+  base_fc = y_base,
+  mint_shr_fc = y_recon,
+  var_base = diag(W1_base), 
+  var_mint_shr = diag(W1_recon),
+  diff = var_mint_shr - var_base,
+  pct_change = diff / var_base * 100 # negative means reduction in variance
+)
+# plot pct change vertically
+var_series %>%
+  arrange(pct_change) %>%
+  mutate(series = factor(series, levels = series)) %>%
+  ggplot(aes(x = series, y = pct_change)) +
+    geom_col() +
+    coord_flip() +
+    theme_minimal() +
+    theme(axis.text.y = element_blank())
+any(var_series$pct_change > 0)
+
+# look at the bounds 95%
+bound_series <- tibble(
+  series = colnames(W1_recon),
+  base_lower = qnorm(0.025, mean = actual - result$e[["base"]][1, ], sd = sqrt(diag(W1_base))),
+  base_upper = qnorm(0.975, mean = actual - result$e[["base"]][1, ], sd = sqrt(diag(W1_base))),
+  mint_shr_lower = qnorm(0.025, mean = actual - result$e[["mint_shr"]][1, ], sd = sqrt(diag(W1_recon))),
+  mint_shr_upper = qnorm(0.975, mean = actual - result$e[["mint_shr"]][1, ], sd = sqrt(diag(W1_recon)))
+) %>%
+  mutate(
+    base_width = base_upper - base_lower,
+    mint_shr_width = mint_shr_upper - mint_shr_lower,
+    diff_width = mint_shr_width - base_width,
+    pct_change_width = diff_width / base_width * 100 # negative means reduction in width
+  )
+
+# look at the WS95 of 42 iter
+temp <- score_df |> 
+  filter(
+    iter == i, 
+    rule == "W95",
+    .model %in% c("mint_shr")
+  ) |>
+  # plot diff score vertically
+  mutate(diff = score - base_score) |> 
+  arrange(desc(diff)) |> 
+  mutate(series = factor(series, levels = series))
+
+temp |> 
+  ggplot(aes(x = series, y = diff)) +
+    geom_col() +
+    coord_flip() +
+    theme_minimal() +
+    theme(axis.text.y = element_blank())
+
+temp[1,]
+var_series[560,]
+bound_series[560,]
+actual[560]
+
+
+manual_compute <- bound_series[560,"base_width"] |> pull()
+score_df |> 
+  filter(
+    rule == "W95",
+    .model %in% c("mint_shr")
+  )  |> filter(abs(base_score - manual_compute) < 1e-6)
+
+manual_compute <- bound_series[560,"mint_shr_width"] |> pull()
+score_df |> 
+  filter(
+    rule == "W95",
+    .model %in% c("mint_shr")
+  )  |> filter(abs(score - manual_compute) < 1e-6)
+```
+
+
+### Calculating coverage
+```{r}
+M <- length(result_list)
+coverage <- 0.8
+lower_q <- (1 - coverage) / 2; upper_q <- 1 - lower_q
+model_names <- c("base", "ols", "mint_shr", "mint_n", "mint_shr_pc_K1", "mint_n_pc_K1")
+
+#   row - series
+#   col - models
+result_coverage <- matrix(0, ncol = length(model_names), nrow = nrow(S),
+  dimnames = list(rownames(S), model_names)
+)
+
+# Get actual data
+y <- visnights_full |> 
+  as_tibble() |> 
+  arrange(State, Region) |>
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) |>
+  select(name, Nights, Month) |>
+  pivot_wider(names_from = name, values_from = Nights) |>
+  select(-Month) |>
+  as.matrix()
+y <- y[, rownames(S)]
+
+start_date <- seq_dates$start[1]
+
+for (i in 1:M) {
+  
+  result <- result_list_full[[i]]
+  result$e <- flatten_e_list(result$e) # flatten the list of errors
+  resid <- result$resid
+
+  actual <- y[seq_dates$end[i] + 1 - start_date + 1, ] # 1-step ahead actuals
+
+  # Recover a list of W1_hat for each model
+  W1_hats <- list()
+  W1_hats[["base"]] <- compute_cov_matrix(resid, T) # sample variance of 1-step-ahead residuals as a proxy
+  W1_hats[["ols"]] <- W1_hats[["base"]]
+
+  W1_hats[["mint_shr"]] <- shrinkage_est(resid, result$W_shr[1])$cov
+  W1_hats[["mint_n"]] <- novelist_est(resid, result$W_n["delta", 1], result$W_n["lambda", 1])$cov
+  rownames(W1_hats[["mint_n"]]) <- colnames(W1_hats[["mint_n"]]) <- rownames(S)
+
+  # pc models
+  W1_hats[["mint_shr_pc_K1"]] <- shrinkage_pc_est(resid, 1, result$W_shr[2])$cov
+  W1_hats[["mint_n_pc_K1"]] <- novelist_pc_est(resid, 1, result$W_n["delta", 2], result$W_n["lambda", 2])$cov
+  
+  for (model in model_names) {
+
+    if (model == "base") {
+      base_fc <- actual - result$e$base[1, ] # recover 1-step ahead base forecast
+
+      # coverage for base model
+      # add 1 if actual is within 95% interval
+      lower <- qnorm(lower_q, mean = base_fc, sd = sqrt(diag(W1_hats[[model]])))
+      upper <- qnorm(upper_q, mean = base_fc, sd = sqrt(diag(W1_hats[[model]])))
+      result_coverage[, model] <- result_coverage[, model] + (actual >= lower & actual <= upper)
+
+    } else {
+      # obtain mapping G
+      if (model == "ols") {
+        G <- solve(t(S) %*% S) %*% t(S)
+      } else {
+        P <- t(S) %*% solve(W1_hats[[model]])
+        G <- solve(P %*% S) %*% P
+      }
+      # get reconciled forecast and covariance
+      y_recon <- actual - result$e[[model]][1, ]
+      W1_recon <- S %*% G %*% W1_hats[[model]] %*% t(G) %*% t(S)
+
+      # coverage for reconciled model
+      lower <- qnorm(lower_q, mean = y_recon, sd = sqrt(diag(W1_recon)))
+      upper <- qnorm(upper_q, mean = y_recon, sd = sqrt(diag(W1_recon)))
+      result_coverage[, model] <- result_coverage[, model] + (actual >= lower & actual <= upper)
+    }
+  }
+  cat("Done", i, "\n")
+}
+
+result_coverage <- result_coverage/M 
+```
+
+```{r}
+library(tidytext)
+library(stringr)
+
+# horizontal lolipop plots of coverage, faceted by level
+result_coverage <- readRDS("tourism/job/results/result_coverage95.rds")
+
+plot_df <- as_tibble(result_coverage, rownames = "series") |> 
+  pivot_longer(-series, names_to = ".model", values_to = "coverage") |>
+  left_join(row_names, by = c("series" = "name")) |>
+  mutate(
+    level = level_map[series] %||% NA_character_,
+    # %||% is just “if lookup returns NULL, fall back to NA
+    level = factor(
+      level,
+      levels = desired_order,
+      labels = str_replace_all(desired_order, "_", " ")  # replace "_" with " "
+    )
+  ) |>
+  # 4 facets
+  mutate(level_group = case_when(
+    level %in% c("Australia", "Australia by Purpose", "State", "State by Purpose") ~ "1.High levels",
+    level %in% c("Zone", "Zone by Purpose") ~ "2.Zone & Zone by Purpose",
+    level == "Region" ~ "3.Region",
+    level == "Region by Purpose" ~ "4.Region by Purpose",
+    TRUE ~ NA_character_
+  )) |>
+  # collapse to 2 facets
+  mutate(level_group = case_when(
+    level_group %in% c("1.High levels", "2.Zone & Zone by Purpose") ~ "1.High levels",
+    level_group %in% c("3.Region", "4.Region by Purpose") ~ "2.Region and Region by Purpose",
+  )) |>
+  group_by(level_group, series) |>
+  mutate(order_key = coverage[.model == "mint_n_pc_K1"][1]) |>
+  ungroup() |>
+  mutate(order_key = if_else(is.na(order_key), -Inf, order_key),
+         series_ord = reorder_within(series, order_key, level_group, .desc = TRUE))
+
+ggplot(plot_df, aes(x = series_ord, y = coverage)) +
+  # geom_segment(aes(xend = series_ord, yend = 0), color = "grey") +
+  geom_point(aes(color = .model, shape = .model), size = 2) +
+  facet_wrap(~ level_group, ncol = 1, scales = "free") + # free_y drops unused levels per facet
+  geom_hline(yintercept = coverage, linetype = "dashed", color = "black") + # draw line for coverage
+  # change y axis scale to 0.8 to 1
+  scale_y_continuous(limits = c(0.45, 1), breaks = seq(0.55, 0.95, by = 0.1)) +
+  scale_x_reordered() + # remove the internal suffix used by reorder_within
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        legend.position = "bottom") +
+  labs(x = "Series", y = "Empirical Coverage",
+       title = "Empirical coverage of 80% prediction intervals")
+
+# top 20 worst coverage of mint_shr
+plot_df |> 
+  pivot_wider(names_from = .model, values_from = coverage) |>
+  arrange(desc(mint_shr)) |>
+  select(series, level, eval(model_names)) |>
+  print(n=20)
+
+# average coverage per model per level
+coverage <- 0.95
+plot_df |> 
+  group_by(level, .model) |> 
+  summarise(mean_coverage = mean(coverage)) |> 
+  ggplot(aes(x = .model, y = mean_coverage, fill = .model)) +
+    geom_col() +
+    labs(x = "Model", y = "Empirical Coverage",
+         title = "Average empirical coverage of 95% prediction intervals per level") +
+    geom_hline(yintercept = 0.95, linetype = "dashed", color = "black") + # draw line for coverage
+    facet_wrap(~ level, ncol=2, scales = "free_y") +
     theme_minimal()
 
 ```

@@ -23,6 +23,7 @@ library(ReconCov)
 library(purrr)
 library(stringr)
 library(forcats)
+library(stringr)
 
 source("R/helpers.R")
 ```
@@ -264,6 +265,8 @@ improv_df <- encode_recon_models(improv_df)
 
 # plotting
 improv_df |>
+  # reverse signs of pct_change
+  mutate(pct_change = -pct_change) |>
   ggplot(aes(x = h, y = pct_change, color = family, linetype = variant_type, shape = shape_lab)) +
   geom_line(linewidth = 0.8) +
   geom_point(alpha = 0.85, size = 2.6, na.rm = TRUE) +
@@ -282,7 +285,8 @@ improv_df |>
   mutate(
     is_best = pct_change == min(pct_change),
     # rescale to (0 to -1)
-    scaled_pct_change = scales::rescale(pct_change, to = c(-100, 0))
+    scaled_pct_change = scales::rescale(pct_change, to = c(-100, 0)),
+    scaled_pct_change = -scaled_pct_change #revert to positive
   ) |>
   filter(.model != "base") |> 
   ggplot(aes(
@@ -292,7 +296,7 @@ improv_df |>
   )) +
     geom_tile() +
     geom_text(aes(label = ifelse(is_best, "*", "")), color = "black", size = 8) +
-    scale_fill_gradient2(low = "#ca2b33ff", mid = "#f7ffadff", midpoint = 0) +
+    scale_fill_gradient2(high = "#ca2b33ff", mid = "#f7ffadff", midpoint = 0) +
     labs(x = "Horizon", y = "Model",
          title = "Average % relative improvements in MSE compared to Base",
          subtitle = "Scaled the range to (-1,0). Worst model 0, Best model -1. Avg series -> % improv per iter -> avg") +
