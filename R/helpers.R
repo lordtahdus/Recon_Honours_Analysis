@@ -80,7 +80,9 @@ encode_recon_models <- function(df, model_col = ".model", drop_large_pc = FALSE)
         "MinT-S(sv)","MinT-N(sv)",
         "MinT-S(hcov)","MinT-N(hcov)"
       ))
-    )
+    ) |> 
+    # turn pc_k to character for better legend handling in ggplot
+    mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k)))
 }
 
 # ---------- 2) Reusable ggplot scales ----------
@@ -111,12 +113,22 @@ recon_scales <- list(
   scale_shape_manual(
     name   = "PC",
     values = c(
-      "0 PC" = NA,  # no point
-      "PC1"  = 16,  # triangle
-      "PC2"  = 7   # square
+      "0 PC" = "0",  # no point
+      "PC1"  = "1",  # triangle
+      "PC2"  = "2"   # square
       # If you keep K5/K10/K20, add e.g. "PC5"=18 (diamond), etc.
     ),
     drop = FALSE
   )
 )
 
+# ---------- 3) Color fill for probabilistic plotting ----------
+recon_fill_scale <- scale_fill_manual(
+  name = "Family",
+  values = c(
+    "Base"   = "#9490b7ff",  # grey
+    "OLS"    = "#d1d400ff",  # black
+    "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
+    "MinT-N" = "#9500c2ff"   # purple
+  )
+)

@@ -4,28 +4,58 @@ editor_options:
   chunk_output_type: console
 ---
 
-
 ```{r}
 library(patchwork)
+library(tidyr)
+library(ggplot2)
+library(tsibble)
+library(lubridate)
+library(dplyr)
+```
+
+```{r}
 
 p_region <- visnights %>% 
   group_by(Month, Region) %>%
   summarise(Nights = sum(Nights), .groups = "drop") %>%
-  filter(year(Month) > 2015) %>% 
+  filter(year(Month) > 2012 & year(Month) < 2017) %>% 
   ggplot(aes(x = Month, y = Nights, color = Region)) +
     geom_line(alpha = 0.4) +
     guides(color = "none") +
     labs(
         subtitle = "77 Regions",
-        title = "Australian Domestic Tourism Monthly Flows in 77 Regions, summing up to 7 States, 
-and up to Total Australia"
+        title = "Australian Domestic Tourism Monthly Flows in 77 Regions, summing up to 27 Zones, 7 States, and up to Total Australia,
+from Jan 2013 to Dec 2016"
     ) +
     scale_x_yearmonth(
-      breaks = yearmonth(c("2017 Jan", "2019 Jan")),   # two yearmonth objects
-      labels = c("Jan 2017", "Jan 2019")                # custom text
+      breaks = yearmonth(c("2014 Jan", "2016 Jan")),   # two yearmonth objects
+      labels = c("Jan 2014", "Jan 2016")                # custom text
     ) +
     scale_y_continuous(
-      limits = c(0, 55000),           # lower limit 0, upper auto
+      limits = c(0, 46000),           # lower limit 0, upper auto
+      expand = c(0, 0)             # remove padding at axes
+    ) +
+    theme_bw() +
+    theme(
+      plot.subtitle = element_text(hjust = 0.5)  # center the title
+    )
+
+p_zone <- visnights %>% 
+  group_by(Month, Zone) %>%
+  summarise(Nights = sum(Nights), .groups = "drop") %>%
+  filter(year(Month) > 2012 & year(Month) < 2017) %>% 
+  ggplot(aes(x = Month, y = Nights, color = Zone)) +
+    geom_line(alpha = 1) +
+    guides(color = "none") +
+    labs(
+        subtitle = "27 Zones"
+    ) +
+    scale_x_yearmonth(
+      breaks = yearmonth(c("2014 Jan", "2016 Jan")),   # two yearmonth objects
+      labels = c("Jan 2014", "Jan 2016")                # custom text
+    ) +
+    scale_y_continuous(
+      limits = c(0, 46000),           # lower limit 0, upper auto
       expand = c(0, 0)             # remove padding at axes
     ) +
     theme_bw() +
@@ -36,7 +66,7 @@ and up to Total Australia"
 p_state <- visnights %>% 
   group_by(Month, State) %>%
   summarise(Nights = sum(Nights), .groups = "drop") %>%
-  filter(year(Month) > 2015) %>% 
+  filter(year(Month) > 2012 & year(Month) < 2017) %>% 
   ggplot(aes(x = Month, y = Nights, color = State)) +
     geom_line(alpha = 1) +
     guides(color = "none") +
@@ -44,11 +74,11 @@ p_state <- visnights %>%
         subtitle = "7 States"
     ) +
     scale_x_yearmonth(
-      breaks = yearmonth(c("2017 Jan", "2019 Jan")),   # two yearmonth objects
-      labels = c("Jan 2017", "Jan 2019")                # custom text
+      breaks = yearmonth(c("2014 Jan", "2016 Jan")),   # two yearmonth objects
+      labels = c("Jan 2014", "Jan 2016")                # custom text
     ) +
     scale_y_continuous(
-      limits = c(0, 55000),           # lower limit 0, upper auto
+      limits = c(0, 46000),           # lower limit 0, upper auto
       expand = c(0, 0)             # remove padding at axes
     ) +
     theme_bw() +
@@ -59,7 +89,7 @@ p_state <- visnights %>%
 p_aus <- visnights %>% 
   group_by(Month) %>%
   summarise(Nights = sum(Nights), .groups = "drop") %>%
-  filter(year(Month) > 2015) %>% 
+  filter(year(Month) > 2012 & year(Month) < 2017) %>% 
   ggplot(aes(x = Month, y = Nights)) +
     geom_line(alpha = 1, color = "red") +
     guides(color = "none") +
@@ -68,11 +98,11 @@ p_aus <- visnights %>%
       caption = "Source: Tourism Research Australia"
     ) +
     scale_x_yearmonth(
-      breaks = yearmonth(c("2017 Jan", "2019 Jan")),   # two yearmonth objects
-      labels = c("Jan 2017", "Jan 2019")                # custom text
+      breaks = yearmonth(c("2014 Jan", "2016 Jan")),   # two yearmonth objects
+      labels = c("Jan 2014", "Jan 2016")                # custom text
     ) +
     scale_y_continuous(
-      limits = c(0, 55000),           # lower limit 0, upper auto
+      limits = c(0, 46000),           # lower limit 0, upper auto
       expand = c(0, 0)             # remove padding at axes
     ) +
     theme_bw() +
@@ -80,8 +110,8 @@ p_aus <- visnights %>%
       plot.subtitle = element_text(hjust = 0.5)  # center the title
     )
 
-p_region + p_state + p_aus + 
-    plot_layout(ncol = 3, guides = "collect", axis_titles = "collect", axes = "collect") & 
+p_region + p_zone + p_state + p_aus + 
+    plot_layout(ncol = 4, guides = "collect", axis_titles = "collect", axes = "collect") & 
     labs(
         y = "Visitor Nights (Thousands)"
     )

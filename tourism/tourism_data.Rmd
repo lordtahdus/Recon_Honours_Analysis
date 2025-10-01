@@ -31,7 +31,7 @@ library(ReconCov)
 
 ```{r}
 visnights_raw <- readr::read_csv(
-    here::here("playground/data/visnights_monthly.csv")
+    here::here("tourism/data/visnights_monthly.csv")
   ) |>
   mutate(Month = yearmonth(Month)) 
 

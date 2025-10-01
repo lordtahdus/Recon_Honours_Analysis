@@ -571,38 +571,39 @@ score_df |>
 
 ## Average of % improvements
 ```{r}
-score_label <- "W95"
-score_df |> 
-  filter(rule == score_label) |>
-  group_by(family, model_label) |> 
-  summarise(
-    pct_change_avg = mean(pct_change_per_series),
-    # capped at 10%
-    pct_change_avg = pmin(pct_change_avg, 10),
-    capped = ifelse(pct_change_avg >= 10, 1, 0)
-  ) |> 
-  filter(model_label != "Base") |>
-  ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
-    geom_col() +
-    labs(x = "Model", y = "% improvements",
-         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-         subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
-    # labels on top of bars if capped
-    geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
-    scale_fill_manual(
-      name = "Family",
-      values = c(
-        "OLS"    = "#d1d400ff",  # black
-        "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
-        "MinT-N" = "#9500c2ff"   # purple
-      )
-    ) +
-    theme_minimal()
-
-# # per level
+# score_label <- "W95"
 # score_df |> 
 #   filter(rule == score_label) |>
-#   group_by(family, model_label, level) |> 
+#   group_by(family, model_label) |> 
+#   summarise(
+#     pct_change_avg = mean(pct_change_per_series),
+#     # capped at 10%
+#     pct_change_avg = pmin(pct_change_avg, 10),
+#     capped = ifelse(pct_change_avg >= 10, 1, 0)
+#   ) |> 
+#   filter(model_label != "Base") |>
+#   ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
+#     geom_col() +
+#     labs(x = "Model", y = "% improvements",
+#          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+#          subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
+#     # labels on top of bars if capped
+#     geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
+#     scale_fill_manual(
+#       name = "Family",
+#       values = c(
+#         "OLS"    = "#d1d400ff",  # black
+#         "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
+#         "MinT-N" = "#9500c2ff"   # purple
+#       )
+#     ) +
+#     theme_minimal()
+
+# # per level
+# score_label <- "W80"
+# score_df |> 
+#   filter(rule == score_label) |>
+#   group_by(family, model_label, pc_k, level) |> 
 #   summarise(
 #     pct_change_avg = mean(pct_change_per_series)
 #     # capped at 10%
@@ -610,11 +611,15 @@ score_df |>
 #     # capped = ifelse(pct_change_avg >= 10, 1, 0)
 #   ) |> 
 #   filter(model_label != "Base") |>
-#   ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
-#     geom_col(position = "dodge") +
+#   mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k))) %>%
+#   # ggplot
+#   ggplot(aes(x = model_label, y = pct_change_avg, fill = family, alpha = pc_k)) +
+#     geom_col(color = "black", size = 0.5) +
 #     labs(x = "Level", y = "% improvements",
-#          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-#          subtitle = "Interpret: negative values mean improvement. Avg over pct") +
+#          title = "Winkler score 80% by level",
+#         #  title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+#         #  subtitle = "Interpret: negative values mean improvement. Avg over pct"
+#         ) +
 #     facet_wrap(~ level, ncol=2, scales = "free_y") +
 #     # markers on top of bars if capped, not using texts
 #     # geom_point(data = . %>% filter(capped == 1), aes(x = model_label, y = 10 + 0.5), shape = 8, size = 3, color = "red") +
@@ -626,6 +631,7 @@ score_df |>
 #         "MinT-N" = "#9500c2ff"   # purple
 #       )
 #     ) +
+#     scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
 #     theme_minimal() +
 #     # rotate the x axis labels
 #     theme(axis.text.x = element_text(angle = 45, hjust = 0.7))
@@ -634,43 +640,37 @@ score_df |>
 # Consistent plotting:
 # average across series per iteration -> compute % improv per iter -> average across iter
 score_label <- "CRPS"
-score_df |> 
-  filter(rule == score_label) |>
-  # average across series per iteration & compute % improv per iter
-  group_by(family, model_label, iter) |>
+score_df %>%
+  filter(rule == score_label) %>%
+  group_by(family, model_label, pc_k, iter) %>%
   summarise(
     score = mean(score),
     base_score = mean(base_score),
-    pct_change = (base_score-score) / base_score * 100,
-  ) |>
-  ungroup() |>
-  # average across iter
-  group_by(family, model_label) |>
+    pct_change = (base_score - score) / base_score * 100,
+    .groups = "drop_last"
+  ) %>%
+  ungroup() %>%
+  group_by(family, model_label, pc_k) %>%
   summarise(
-    pct_change_avg = mean(pct_change),
-    # capped at 10%
-    pct_change_avg = pmin(pct_change_avg, 10),
-    capped = ifelse(pct_change_avg >= 10, 1, 0)
-  ) |>
-  filter(model_label != "Base") |>
-  ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
-    geom_col() +
-    labs(x = "Model", y = "% improvements",
-         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-         subtitle = "Interpret: positive values indicate improvement. Consistent avg and % improv") +
-    # labels on top of bars if capped
+    pct_change_avg = pmin(mean(pct_change), 10),   # cap at 10
+    capped = as.integer(pct_change_avg >= 10),
+    .groups = "drop"
+  ) %>%
+  filter(model_label != "Base", model_label != "OLS-S") %>%
+  mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k))) %>%
+  # ggplot
+  ggplot(aes(x = model_label, y = pct_change_avg,
+             fill = family, alpha = pc_k)) +
+    geom_col(color = "black", size = 0.5) +
     geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
-    scale_fill_manual(
-      name = "Family",
-      values = c(
-        "OLS"    = "#d1d400ff",  # black
-        "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
-        "MinT-N" = "#9500c2ff"   # purple
-      )
+    recon_fill_scale +
+    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
+    labs(
+      x = "Model", y = "% improvements",
+      title = paste("CRPS")
     ) +
-    theme_minimal()
-
-
+    theme_minimal(base_size = 12) +
+    theme(axis.text.x = element_text(angle = 25, hjust = 1))
 ```
 
 ```{r radar}
@@ -1001,51 +1001,48 @@ if (all(result_energy[19, ] == 0)) {
 ```{r}
 # overall energy score per model
 energy_df |> 
-  group_by(family, model_label) |> 
+  group_by(family, model_label, pc_k) |> 
   summarise(
     pct_change_avg = mean(pct_change_per_series)
   ) |>
-  ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
-    geom_col() +
+  mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k))) |> 
+  filter(! grepl("Ba|OLS-S", model_label)) |>
+  ggplot(aes(x = model_label, y = pct_change_avg, fill = family, alpha = pc_k)) +
+    geom_col(color = "black", size = 0.5) +
+    recon_fill_scale +
+    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
     labs(x = "Model", y = "% improvements",
-         title = "Average of % relative improvements in Energy Score compared to Base",
-         subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016") +
-    scale_fill_manual(
-      name = "Family",
-      values = c(
-        "Base"   = "#7A7A7A",  # grey
-        "OLS"    = "#d1d400ff",  # black
-        "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
-        "MinT-N" = "#9500c2ff"   # purple
-      )
-    ) +
+         title = "Energy Score"
+        #  title = "Average of % relative improvements in Energy Score compared to Base",
+        #  subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016"
+        ) +
     theme_minimal()
 
 
-# compute average energy score then compute pct change
-energy_df |> 
-  group_by(family, model_label) |> 
-  summarise(
-    mean_score = mean(score),
-    mean_base_score = mean(base_score),
-    pct_change_avg = (mean_score - mean_base_score) / mean_base_score * 100
-  ) |>
-  filter(model_label != "Base") |>
-  ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
-    geom_col() +
-    labs(x = "Model", y = "% improvements",
-         title = "Average of % relative improvements in Energy Score compared to Base",
-         subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016") +
-    scale_fill_manual(
-      name = "Family",
-      values = c(
-        "Base"   = "#7A7A7A",  # grey
-        "OLS"    = "#d1d400ff",  # black
-        "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
-        "MinT-N" = "#9500c2ff"   # purple
-      )
-    ) +
-    theme_minimal()
+# # compute average energy score then compute pct change
+# energy_df |> 
+#   group_by(family, model_label) |> 
+#   summarise(
+#     mean_score = mean(score),
+#     mean_base_score = mean(base_score),
+#     pct_change_avg = (mean_score - mean_base_score) / mean_base_score * 100
+#   ) |>
+#   filter(model_label != "Base") |>
+#   ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
+#     geom_col() +
+#     labs(x = "Model", y = "% improvements",
+#          title = "Average of % relative improvements in Energy Score compared to Base",
+#          subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016") +
+#     scale_fill_manual(
+#       name = "Family",
+#       values = c(
+#         "Base"   = "#7A7A7A",  # grey
+#         "OLS"    = "#d1d400ff",  # black
+#         "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
+#         "MinT-N" = "#9500c2ff"   # purple
+#       )
+#     ) +
+#     theme_minimal()
 
 ```
 
@@ -1053,7 +1050,11 @@ energy_df |>
 ## Inspect MinT-Shr worse performance on W95
 
 ```{r}
-i <- 1 # worse performance
+score_df |> group_by(iter, .model) |> summarise(score = mean(score), base_score=mean(base_score), pct_change=(base_score-score)/base_score) |> arrange(desc(pct_change))
+```
+
+```{r}
+i <- 42
 result <- result_list_full[[i]]
 e <- result$e |> flatten_e_list()
 resid <- result$resid
@@ -1073,19 +1074,28 @@ actual <- y[seq_dates$end[i] + 1 - start_date + 1, ] # 1-step ahead actuals
 W1_base <- compute_cov_matrix(resid, T)
 y_base <- actual - result$e[["base"]][1, ]
 
-W1_mintshr <- shrinkage_est(resid, result$W_shr[1])$cov
-y_recon <- actual - result$e[["mint_shr"]][1, ]
-P <- t(S) %*% solve(W1_mintshr)
+# # MinT-S
+# W1_recon <- shrinkage_est(resid, result$W_shr[1])$cov
+# y_recon <- actual - result$e[["mint_shr"]][1, ]
+# MinT-N(PC1)
+W1_recon <- novelist_pc_est(resid, 1, result$W_n["delta", 2], result$W_n["lambda", 2])$cov
+y_recon <- actual - result$e$mint_n_pc$K1[1, ]
+P <- t(S) %*% solve(W1_recon)
 G <- solve(P %*% S) %*% P
-W1_recon <- S %*% G %*% W1_mintshr %*% t(G) %*% t(S)
+
+# # OLS
+# W1_recon <- W1_base
+# y_recon <- actual - result$e[["ols"]][1, ]
+# G <- solve(t(S) %*% S) %*% t(S)
+W1_recon <- S %*% G %*% W1_recon %*% t(G) %*% t(S)
 
 var_series <- tibble(
   series = colnames(W1_recon),
   base_fc = y_base,
-  mint_shr_fc = y_recon,
+  recon_fc = y_recon,
   var_base = diag(W1_base), 
-  var_mint_shr = diag(W1_recon),
-  diff = var_mint_shr - var_base,
+  var_recon = diag(W1_recon),
+  diff = var_recon - var_base,
   pct_change = diff / var_base * 100 # negative means reduction in variance
 )
 # plot pct change vertically
@@ -1156,7 +1166,7 @@ score_df |>
 
 
 ### Calculating coverage
-```{r}
+```{r loop calculate coverage}
 M <- length(result_list)
 coverage <- 0.8
 lower_q <- (1 - coverage) / 2; upper_q <- 1 - lower_q
@@ -1208,7 +1218,7 @@ for (i in 1:M) {
       base_fc <- actual - result$e$base[1, ] # recover 1-step ahead base forecast
 
       # coverage for base model
-      # add 1 if actual is within 95% interval
+      # add 1 if actual is within interval
       lower <- qnorm(lower_q, mean = base_fc, sd = sqrt(diag(W1_hats[[model]])))
       upper <- qnorm(upper_q, mean = base_fc, sd = sqrt(diag(W1_hats[[model]])))
       result_coverage[, model] <- result_coverage[, model] + (actual >= lower & actual <= upper)
@@ -1237,7 +1247,7 @@ for (i in 1:M) {
 result_coverage <- result_coverage/M 
 ```
 
-```{r}
+```{r plotting coverage}
 library(tidytext)
 library(stringr)
 
@@ -1301,12 +1311,91 @@ coverage <- 0.95
 plot_df |> 
   group_by(level, .model) |> 
   summarise(mean_coverage = mean(coverage)) |> 
-  ggplot(aes(x = .model, y = mean_coverage, fill = .model)) +
-    geom_col() +
+  encode_recon_models() |> 
+  mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k))) |> 
+  ggplot(aes(x = model_label, y = mean_coverage, fill = family, alpha = pc_k)) +
+    geom_col(color = "black", size = 0.5) +
+    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
     labs(x = "Model", y = "Empirical Coverage",
-         title = "Average empirical coverage of 95% prediction intervals per level") +
+         title = "Empirical coverage of 95% prediction intervals by level") +
     geom_hline(yintercept = 0.95, linetype = "dashed", color = "black") + # draw line for coverage
     facet_wrap(~ level, ncol=2, scales = "free_y") +
-    theme_minimal()
+    recon_fill_scale +
+    theme_minimal() +
+    # rotate the x axis labels
+    theme(axis.text.x = element_text(angle = 45, hjust = 0.7))
+  
+```
 
+
+
+```{r}
+# plot WS95 by level
+score_label <- "W80"
+score_df |> 
+  filter(rule == score_label) |> 
+  group_by(family, model_label, pc_k, level) |> 
+  summarise(
+    score = mean(score),
+    base_score = mean(base_score),
+    pct_change = (base_score - score) / base_score *100
+  ) |> 
+  filter(! grepl("Ba|OLS-S", model_label)) |>
+  mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k))) |> 
+  # ggplot
+  ggplot(aes(x = model_label, y = pct_change, fill = family, alpha = pc_k)) +
+    geom_col(color = "black", size = 0.5) +
+    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
+    labs(x = "Level", y = "% improvements",
+         title = "Winkler score 95% by level"
+        #  title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+        #  subtitle = "Interpret: positive values indicate improvement. Avg over pct"
+        ) +
+    facet_wrap(~ level, ncol=2, scales = "free_y") +
+    recon_fill_scale +
+    theme_minimal() +
+    # rotate the x axis labels
+    theme(axis.text.x = element_text(angle = 45, hjust = 0.7))
+
+# distributions of errors
+high_levels <- score_df |> 
+  filter(level %in% c("Australia", "State", "Australia by Purpose")) |> pull(series) |> unique()
+y[(seq_dates$end[1] + 1 - start_date + 1):nrow(y),high_levels]
+
+e_df <- matrix(NA, nrow = M, ncol = nrow(S),
+  dimnames = list(NULL, rownames(S))
+)
+for (i in 1:M) {
+  result <- result_list_full[[i]]
+  result$e <- flatten_e_list(result$e) # flatten the list of errors
+  # mint_shr
+  # e_df[i, ] <- result$e$mint_shr[1, ]
+  # ols
+  e_df[i, ] <- result$e$ols[1, ]
+  # mint_n_pc_K1
+  # e_df[i, ] <- result$e$mint_n_pc_K1[1, ]
+}
+
+# same historgram but with 95% bounds vertical lines for each series, bounds got from the errors
+bounds <- t(apply(e_df, 2, function(x) quantile(x, probs = c(0.025, 0.975))))
+colnames(bounds) <- c("lower", "upper")
+
+e_df |> 
+  as_tibble() |> 
+  mutate(iter = 1:n()) |>
+  pivot_longer(-iter, names_to = "series", values_to = "error") |>
+  filter(series %in% high_levels) |>
+  ggplot(aes(x = error)) +
+    geom_histogram(bins = 30, fill = "lightblue", color = "black") +
+    facet_wrap(~ series, ncol=2, scales = "free") +
+    # geom_vline(data = as_tibble(bounds, rownames = "series") |> filter(series %in% high_levels),
+    #            aes(xintercept = lower), color = "red", linetype = "dashed") +
+    # geom_vline(data = as_tibble(bounds, rownames = "series") |> filter(series %in% high_levels),
+    #            aes(xintercept = upper), color = "red", linetype = "dashed") +
+    theme_minimal() +
+    labs(title = "Distribution of 1-step ahead errors of MinT-Shr at high levels")
+
+# summary stats of errors
+psych::describe(e_df[, high_levels])[,c(1,3,4,11,12)] |> 
+  as_tibble(rownames = "series")
 ```
