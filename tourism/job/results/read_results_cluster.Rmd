@@ -526,26 +526,26 @@ score_df <- rbind(score_df, get_score_df(result_crps) |> mutate(rule = "CRPS"))
 
 ```{r pct over average}
 # # winklers improvements per model
-score_label <- "CRPS"
-score_df |>
-  filter(rule == score_label) |>
-  group_by(family, model_label) |>
-  summarise(
-    score = mean(score),
-    base_score = mean(base_score),
-    pct_change = (score - base_score) / base_score * 100
-  ) |> 
-  filter(model_label != "Base") |>
-  ggplot(aes(x = model_label, y = pct_change, fill = family)) +
-    geom_col() +
-    labs(x = "Model", y = "% improvements",
-         title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-         subtitle = "Interpret: negative values indicate improvement. Pct over Avg") +
-    scale_fill_manual(
-      name = "Family",
-      values = c("OLS" = "#d1d400ff", "MinT-S" = "#00c086ff", "MinT-N" = "#9500c2ff")
-    ) +
-    theme_minimal()
+# score_label <- "CRPS"
+# score_df |>
+#   filter(rule == score_label) |>
+#   group_by(family, model_label) |>
+#   summarise(
+#     score = mean(score),
+#     base_score = mean(base_score),
+#     pct_change = (score - base_score) / base_score * 100
+#   ) |> 
+#   filter(model_label != "Base") |>
+#   ggplot(aes(x = model_label, y = pct_change, fill = family)) +
+#     geom_col() +
+#     labs(x = "Model", y = "% improvements",
+#          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
+#          subtitle = "Interpret: negative values indicate improvement. Pct over Avg") +
+#     scale_fill_manual(
+#       name = "Family",
+#       values = c("OLS" = "#d1d400ff", "MinT-S" = "#00c086ff", "MinT-N" = "#9500c2ff")
+#     ) +
+#     theme_minimal()
 
 # # winklers improvements per model per level
 # score_df |>
@@ -599,7 +599,7 @@ score_df |>
 #     ) +
 #     theme_minimal()
 
-# # per level
+# # per level, inconsistent calculation
 # score_label <- "W80"
 # score_df |> 
 #   filter(rule == score_label) |>
@@ -662,15 +662,15 @@ score_df %>%
   ggplot(aes(x = model_label, y = pct_change_avg,
              fill = family, alpha = pc_k)) +
     geom_col(color = "black", size = 0.5) +
-    geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
+    # geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
     recon_fill_scale +
-    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
+    scale_alpha_manual(values = c("0" = 1, "1" = 0.6, "2" = 0.3), guide = "none") +
     labs(
       x = "Model", y = "% improvements",
-      title = paste("CRPS")
+      title = paste(score_label)
     ) +
     theme_minimal(base_size = 12) +
-    theme(axis.text.x = element_text(angle = 25, hjust = 1))
+    theme(axis.text.x = element_text(angle = 25, hjust = 0.6))
 ```
 
 ```{r radar}
@@ -990,7 +990,7 @@ if (all(result_energy[19, ] == 0)) {
     group_by(iter) |>
     mutate(
       base_score = score[.model == "base"],
-      pct_change_per_series = (score - base_score) / base_score * 100
+      pct_change_per_series = (base_score - score) / base_score * 100 # positive means improvement
     )
   energy_df <- encode_recon_models(energy_df)
 }
@@ -1011,12 +1011,13 @@ energy_df |>
     geom_col(color = "black", size = 0.5) +
     recon_fill_scale +
     scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
-    labs(x = "Model", y = "% improvements",
-         title = "Energy Score"
+    labs(x = "Model", y = "% improvements"
+        #  title = "Energy Score"
         #  title = "Average of % relative improvements in Energy Score compared to Base",
         #  subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016"
         ) +
-    theme_minimal()
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 25, hjust = 0.6))
 
 
 # # compute average energy score then compute pct change
@@ -1327,11 +1328,10 @@ plot_df |>
   
 ```
 
-
-
 ```{r}
 # plot WS95 by level
-score_label <- "W80"
+score_label <- "W95"
+
 score_df |> 
   filter(rule == score_label) |> 
   group_by(family, model_label, pc_k, level) |> 
@@ -1340,7 +1340,7 @@ score_df |>
     base_score = mean(base_score),
     pct_change = (base_score - score) / base_score *100
   ) |> 
-  filter(! grepl("Ba|OLS-S", model_label)) |>
+  filter(! grepl("Ba|OLS-S|PC2", model_label)) |>
   mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k))) |> 
   # ggplot
   ggplot(aes(x = model_label, y = pct_change, fill = family, alpha = pc_k)) +
@@ -1355,8 +1355,10 @@ score_df |>
     recon_fill_scale +
     theme_minimal() +
     # rotate the x axis labels
-    theme(axis.text.x = element_text(angle = 45, hjust = 0.7))
+    theme(axis.text.x = element_text(angle = 45, hjust = 0.75))
+```
 
+```{r}
 # distributions of errors
 high_levels <- score_df |> 
   filter(level %in% c("Australia", "State", "Australia by Purpose")) |> pull(series) |> unique()

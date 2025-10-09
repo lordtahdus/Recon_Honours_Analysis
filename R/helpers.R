@@ -75,8 +75,8 @@ encode_recon_models <- function(df, model_col = ".model", drop_large_pc = FALSE)
       model_label = factor(model_label, levels = c(
         "Base","Base-S",
         "OLS","OLS-S",
-        "MinT-S","MinT-N",
-        "MinT-S(PC1)","MinT-S(PC2)","MinT-N(PC1)","MinT-N(PC2)",
+        "MinT-S","MinT-S(PC1)","MinT-S(PC2)",
+        "MinT-N","MinT-N(PC1)","MinT-N(PC2)",
         "MinT-S(sv)","MinT-N(sv)",
         "MinT-S(hcov)","MinT-N(hcov)"
       ))
@@ -113,9 +113,9 @@ recon_scales <- list(
   scale_shape_manual(
     name   = "PC",
     values = c(
-      "0 PC" = "0",  # no point
-      "PC1"  = "1",  # triangle
-      "PC2"  = "2"   # square
+      "0 PC" = NA,  # no point
+      "PC1"  = 16,  # triangle
+      "PC2"  = 7   # square
       # If you keep K5/K10/K20, add e.g. "PC5"=18 (diamond), etc.
     ),
     drop = FALSE

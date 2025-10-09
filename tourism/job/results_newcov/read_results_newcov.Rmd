@@ -301,6 +301,7 @@ improv_df |>
          title = "Average % relative improvements in MSE compared to Base",
          subtitle = "Scaled the range to (-1,0). Worst model 0, Best model -1. Avg series -> % improv per iter -> avg") +
     theme_minimal()
+
 ```
 
 
@@ -380,6 +381,7 @@ MSE_ts |>
          title = "% relative improvements in MSE compared to Base") +
     facet_wrap(~ level, ncol=2, scales = "free_y") +
     theme_minimal()
+
 ```
 
 

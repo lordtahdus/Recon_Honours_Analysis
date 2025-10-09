@@ -125,53 +125,53 @@ for (i in 1:length(result_list)) {
 
 ## Point
 ```{r}
-MSE_ts <- transform_sim_MSE(MSE, F)
+# MSE_ts <- transform_sim_MSE(MSE, F)
 
-# % improv plot
-# average first, then compute % change later
-cap <- 5
-plot_df <- MSE_ts |>
-  # filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
-  filter(.model %in% model_names) |>
-  # filter(.model != "hresid_mint_n_hcov") |>
-  group_by(series, h) |>
-  mutate(
-    base_MSE = MSE[.model == "base"]
-  ) |>
-  ungroup() |>
-  group_by(.model, h) |>
-  summarise(
-    MSE = mean(MSE),
-    base_MSE = mean(base_MSE),
-    pct_change = (MSE - base_MSE) / base_MSE * 100
-  ) |>
-  encode_recon_models() |> 
-  # cap pct_change upper 10%
-  mutate(
-    capped = pct_change >= cap,
-    capped_pct_change = pmin(pct_change, cap)
-  )
+# # % improv plot
+# # average first, then compute % change later
+# cap <- 5
+# plot_df <- MSE_ts |>
+#   # filter(.model %in% c("base", "ols", "mint_shr", "mint_n")) |>
+#   filter(.model %in% model_names) |>
+#   # filter(.model != "hresid_mint_n_hcov") |>
+#   group_by(series, h) |>
+#   mutate(
+#     base_MSE = MSE[.model == "base"]
+#   ) |>
+#   ungroup() |>
+#   group_by(.model, h) |>
+#   summarise(
+#     MSE = mean(MSE),
+#     base_MSE = mean(base_MSE),
+#     pct_change = (MSE - base_MSE) / base_MSE * 100
+#   ) |>
+#   encode_recon_models() |> 
+#   # cap pct_change upper 10%
+#   mutate(
+#     capped = pct_change >= cap,
+#     capped_pct_change = pmin(pct_change, cap)
+#   )
 
-plot_df |> 
-  ggplot(aes(x = h, y = capped_pct_change, color = family, shape = shape_lab, linetype = variant_type)) +
-    geom_line(linewidth = 1.2) +
-    geom_point(alpha = 0.85, size = 2.6, na.rm = TRUE) +
-    recon_scales +
-    # label actual values for capped points
-    geom_text(
-      data = subset(plot_df, pct_change >= cap),
-      aes(label = round(pct_change, 1)),
-      vjust = -0.5, color = "black", size = 3
-    ) +
-    theme_minimal() +
-    labs(
-      x = "Forecast Horizon", y = "% improvements",
-      title = paste(
-        "Average of % relative improvements in MSE compared to Base.", 
-        strsplit(file, "_M")[[1]][1]
-      ),
-      subtitle = "Interpret: negative values indicate improvement. Avg over series and iterations"
-    )
+# plot_df |> 
+#   ggplot(aes(x = h, y = capped_pct_change, color = family, shape = shape_lab, linetype = variant_type)) +
+#     geom_line(linewidth = 1.2) +
+#     geom_point(alpha = 0.85, size = 2.6, na.rm = TRUE) +
+#     recon_scales +
+#     # label actual values for capped points
+#     geom_text(
+#       data = subset(plot_df, pct_change >= cap),
+#       aes(label = round(pct_change, 1)),
+#       vjust = -0.5, color = "black", size = 3
+#     ) +
+#     theme_minimal() +
+#     labs(
+#       x = "Forecast Horizon", y = "% improvements",
+#       title = paste(
+#         "Average of % relative improvements in MSE compared to Base.", 
+#         strsplit(file, "_M")[[1]][1]
+#       ),
+#       subtitle = "Interpret: negative values indicate improvement. Avg over series and iterations"
+#     )
 
 # # compute % per series first, then average
 # MSE_ts |>
@@ -191,31 +191,34 @@ plot_df |>
 #     geom_line() +
 #     theme_minimal()
 
+```
+
+```{r}
 # consistent % improv:
 # Compute MSE across series each iterations → % improv each iterations → average across 500 iterations
-cap <- 6
+cap <- -6
 plot_df <- result_df |> 
   filter(.model %in% model_names) |>
   group_by(.model, h) |>
   summarise(
     MSE = mean(MSE),
-    pct_change = mean(pct_change)
+    pct_change = -mean(pct_change) # inverse for improvement
   ) |>
   encode_recon_models() |> 
   # cap pct_change upper 10%
   mutate(
-    capped = pct_change >= cap,
-    capped_pct_change = pmin(pct_change, cap)
+    capped = pct_change <= cap,
+    capped_pct_change = pmax(pct_change, cap)
   )
 
 plot_df |>
   ggplot(aes(x = h, y = capped_pct_change, color = family, shape = shape_lab, linetype = variant_type)) +
     geom_line(linewidth = 1.2) +
-    geom_point(alpha = 0.85, size = 2.6, na.rm = TRUE) +
+    geom_point(alpha = 0.85, size = 3.5, na.rm = TRUE) +
     recon_scales +
     # label actual values for capped points
     geom_text(
-      data = subset(plot_df, pct_change >= cap),
+      data = subset(plot_df, pct_change <= cap),
       aes(label = round(pct_change, 1)),
       vjust = -0.5, color = "black", size = 3
     ) +
@@ -234,6 +237,7 @@ plot_df |>
 ## Probabilistic
 
 ```{r}
+path <- "sim/thesis_sim/"
 file <- "S100_10_3_1_sparse46_T50_M500.rds"
 score_list <- readRDS(paste0(path, "scores_", file))
 
@@ -255,7 +259,7 @@ get_score_df <- function(mat) {
       base_score = score[.model == "base"]
     ) |>
     ungroup() |>
-    mutate(pct_change_per_series = (score - base_score) / base_score * 100)
+    mutate(pct_change_per_series = (base_score - score) / base_score * 100) # positive is improvement
 
   encode_recon_models(score_df) |> 
     select(-method_raw, -shape_lab, -linetype_lab, -variant_type)
@@ -265,97 +269,43 @@ score_df <- rbind(score_df, get_score_df(score_list$w95) |> mutate(rule = "W95")
 score_df <- rbind(score_df, get_score_df(score_list$crps) |> mutate(rule = "CRPS"))
 ```
 
-```{r}
-# score_label <- "W95"
-
-# # average scores -> % improv
-# score_df |>
-#   filter(rule == score_label) |>
-#   group_by(family, model_label) |>
-#   summarise(
-#     score = mean(score),
-#     base_score = mean(base_score),
-#     pct_change = (score - base_score) / base_score * 100
-#   ) |> 
-#   filter(model_label != "Base") |>
-#   ggplot(aes(x = model_label, y = pct_change, fill = family)) +
-#     geom_col() +
-#     labs(x = "Model", y = "% improvements",
-#          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-#          subtitle = "Interpret: negative values indicate improvement. Pct over Avg") +
-#     scale_fill_manual(
-#       name = "Family",
-#       values = c("OLS" = "#d1d400ff", "MinT-S" = "#00c086ff", "MinT-N" = "#9500c2ff")
-#     ) +
-#     theme_minimal()
-
-# # pct improv per series -> average
-# score_df |> 
-#   filter(rule == score_label) |>
-#   group_by(family, model_label) |> 
-#   summarise(
-#     pct_change_avg = mean(pct_change_per_series)
-#   ) |> 
-#   filter(model_label != "Base") |>
-#   ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
-#     geom_col() +
-#     labs(x = "Model", y = "% improvements",
-#          title = paste("Average of % relative improvements in", score_label, "compared to Base"),
-#          subtitle = "Interpret: negative values indicate improvement. Avg over pct") +
-#     # labels on top of bars if capped
-#     geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
-#     scale_fill_manual(
-#       name = "Family",
-#       values = c(
-#         "OLS"    = "#d1d400ff",  # black
-#         "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
-#         "MinT-N" = "#9500c2ff"   # purple
-#       )
-#     ) +
-#     theme_minimal()
-
-
+```{r WS and CRPS}
 # Consistent plotting:
 # average across series per iteration -> compute % improv per iter -> average across iter
-score_label <- "W95"
+score_label <- "CRPS"
 score_df |> 
   filter(rule == score_label) |>
   # average across series per iteration & compute % improv per iter
-  group_by(family, model_label, iter) |>
+  group_by(family, model_label, pc_k, iter) |>
   summarise(
     score = mean(score),
     base_score = mean(base_score),
-    pct_change = (score - base_score) / base_score * 100
+    pct_change = (base_score - score) / base_score * 100
   ) |>
   ungroup() |>
   # average across iter
-  group_by(family, model_label) |>
+  group_by(family, model_label, pc_k) |>
   summarise(
-    pct_change_avg = mean(pct_change),
-    # capped at 10%
-    pct_change_avg = pmin(pct_change_avg, 10),
-    capped = ifelse(pct_change_avg >= 10, 1, 0)
+    pct_change_avg = mean(pct_change)
+    # # capped at 10%
+    # pct_change_avg = pmin(pct_change_avg, 10),
+    # capped = ifelse(pct_change_avg >= 10, 1, 0)
   ) |>
-  filter(model_label != "Base") |>
-  ggplot(aes(x = model_label, y = pct_change_avg, fill = family)) +
-    geom_col() +
+  # filter unwanted models
+  filter(!grepl("Ba|OLS-S|sample", model_label)) |>
+  ggplot(aes(x = model_label, y = pct_change_avg, fill = family, alpha=pc_k)) +
+    geom_col(color = "black", size = 0.5) +
+    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
     labs(x = "Model", y = "% improvements",
          title = paste("Average of % relative improvements in", score_label, "compared to Base", strsplit(file, "_M")[[1]][1]),
          subtitle = "Interpret: negative values indicate improvement. Consistent avg and % improv") +
     # labels on top of bars if capped
-    geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
-    scale_fill_manual(
-      name = "Family",
-      values = c(
-        "OLS"    = "#d1d400ff",
-        "MinT-S" = "#00c086ff",  # teal (colorblind-friendly)
-        "MinT-N" = "#9500c2ff"   # purple
-      )
-    ) +
+    # geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
+    recon_fill_scale +
     theme_minimal()
 ```
 
-```{r}
+```{r Energy}
 {
   energy_df <- score_list$energy[,1:11] |> 
     as_tibble(rownames = "iter") |>
@@ -366,22 +316,28 @@ score_df |>
     group_by(iter) |>
     mutate(
       base_score = score[.model == "base"],
-      pct_change_per_series = (score - base_score) / base_score * 100
+      pct_change_per_series = (base_score - score) / base_score * 100
     ) |> 
-    encode_recon_models()
+    # filter unwanted models
+    filter(.model != "mint_sample") |>
+    encode_recon_models() |> 
+    filter(!grepl("Ba|OLS-S|sample", model_label))
 }
 # overall energy score per model
 energy_df |> 
-  group_by(.model) |> 
+  group_by(family, model_label, pc_k) |>
   summarise(
     mean_score = mean(score),
     pct_change_avg = mean(pct_change_per_series)
   ) |>
-  ggplot(aes(x = .model, y = pct_change_avg, fill = .model)) +
-    geom_col() +
+  ggplot(aes(x = model_label, y = pct_change_avg, fill = family, alpha=pc_k)) +
+    geom_col(color = "black", size = 0.5) +
+    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
+    recon_fill_scale +
     labs(x = "Model", y = "% improvements",
          title = "Average of % relative improvements in Energy Score compared to Base",
-         subtitle = "Negative values indicate improvement. Avg over pct. Test set ends 2016") +
+         subtitle = paste(file)
+        ) +
     theme_minimal()
 
 ```
