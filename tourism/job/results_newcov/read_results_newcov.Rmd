@@ -267,6 +267,7 @@ improv_df <- encode_recon_models(improv_df)
 improv_df |>
   # reverse signs of pct_change
   mutate(pct_change = -pct_change) |>
+  mutate(shape_lab = ifelse(shape_lab %in% c("PC1","PC2"), shape_lab, "")) |>
   ggplot(aes(x = h, y = pct_change, color = family, linetype = variant_type, shape = shape_lab)) +
   geom_line(linewidth = 0.8) +
   geom_point(alpha = 0.85, size = 2.6, na.rm = TRUE) +

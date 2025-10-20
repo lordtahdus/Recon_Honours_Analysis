@@ -33,9 +33,9 @@ library(tibble)
 ```{r}
 path <- "sim/thesis_sim/"
 # file <- "S4_2_1_T50_M500.rds"
-file <- "S100_10_3_1_sparse46_T300_M500.rds"
+file <- "S100_10_3_1_dense_T300"
 
-result_list <- readRDS(paste0(path, file))
+result_list <- readRDS(paste0(path, file, "_M500.rds"))
 h <- 4
 M <- 500
 
@@ -62,7 +62,7 @@ flatten_e_list <- function(e_list) {
   out                                             # all matrices at top level
 }
 
-{all_model_names <- names(flatten_e_list(result_list[[1]]$e))
+all_model_names <- names(flatten_e_list(result_list[[1]]$e))
 series_names <- rownames(S)
 SSE_cum <- setNames(
   lapply(all_model_names, function(name) {
@@ -74,16 +74,16 @@ SSE_cum <- setNames(
 # we only plot these models
 model_names <- all_model_names[!grepl("K5|K10|K20|sample", all_model_names)]
 
-# need to square the errors first
-SSE_cum <- Reduce(
-  function(acc, res) {
-    e_flat <- flatten_e_list(res$e)
-    Map(function(x, y) x + y^2, acc, e_flat[ names(acc) ])   # element-wise matrix addition
-  },
-  result_list,
-  init = SSE_cum
-)
-MSE <- lapply(SSE_cum, function(mat) mat / M)}
+# # need to square the errors first
+# SSE_cum <- Reduce(
+#   function(acc, res) {
+#     e_flat <- flatten_e_list(res$e)
+#     Map(function(x, y) x + y^2, acc, e_flat[ names(acc) ])   # element-wise matrix addition
+#   },
+#   result_list,
+#   init = SSE_cum
+# )
+# MSE <- lapply(SSE_cum, function(mat) mat / M)
 ```
 
 
@@ -196,7 +196,7 @@ for (i in 1:length(result_list)) {
 ```{r}
 # consistent % improv:
 # Compute MSE across series each iterations → % improv each iterations → average across 500 iterations
-cap <- -6
+
 plot_df <- result_df |> 
   filter(.model %in% model_names) |>
   group_by(.model, h) |>
@@ -204,12 +204,15 @@ plot_df <- result_df |>
     MSE = mean(MSE),
     pct_change = -mean(pct_change) # inverse for improvement
   ) |>
-  encode_recon_models() |> 
+  encode_recon_models()
+
+cap <- -6
+plot_df <- plot_df |> 
   # cap pct_change upper 10%
   mutate(
     capped = pct_change <= cap,
     capped_pct_change = pmax(pct_change, cap)
-  )
+  ) 
 
 plot_df |>
   ggplot(aes(x = h, y = capped_pct_change, color = family, shape = shape_lab, linetype = variant_type)) +
@@ -238,8 +241,8 @@ plot_df |>
 
 ```{r}
 path <- "sim/thesis_sim/"
-file <- "S100_10_3_1_sparse46_T50_M500.rds"
-score_list <- readRDS(paste0(path, "scores_", file))
+file <- "S100_10_3_1_dense_T300"
+score_list <- readRDS(paste0(path, "scores_", file, "_M500.rds"))
 
 get_score_df <- function(mat) {
   score_df <- mat |> 
@@ -267,16 +270,11 @@ get_score_df <- function(mat) {
 score_df <- get_score_df(score_list$w80) |> mutate(rule = "W80")
 score_df <- rbind(score_df, get_score_df(score_list$w95) |> mutate(rule = "W95"))
 score_df <- rbind(score_df, get_score_df(score_list$crps) |> mutate(rule = "CRPS"))
-```
 
-```{r WS and CRPS}
 # Consistent plotting:
 # average across series per iteration -> compute % improv per iter -> average across iter
-score_label <- "CRPS"
-score_df |> 
-  filter(rule == score_label) |>
-  # average across series per iteration & compute % improv per iter
-  group_by(family, model_label, pc_k, iter) |>
+score_df <- score_df |> 
+  group_by(rule, iter, family, model_label, pc_k) |>
   summarise(
     score = mean(score),
     base_score = mean(base_score),
@@ -284,28 +282,17 @@ score_df |>
   ) |>
   ungroup() |>
   # average across iter
-  group_by(family, model_label, pc_k) |>
+  group_by(rule, family, model_label, pc_k) |>
   summarise(
+    mean_score = mean(score),
     pct_change_avg = mean(pct_change)
     # # capped at 10%
     # pct_change_avg = pmin(pct_change_avg, 10),
     # capped = ifelse(pct_change_avg >= 10, 1, 0)
   ) |>
   # filter unwanted models
-  filter(!grepl("Ba|OLS-S|sample", model_label)) |>
-  ggplot(aes(x = model_label, y = pct_change_avg, fill = family, alpha=pc_k)) +
-    geom_col(color = "black", size = 0.5) +
-    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
-    labs(x = "Model", y = "% improvements",
-         title = paste("Average of % relative improvements in", score_label, "compared to Base", strsplit(file, "_M")[[1]][1]),
-         subtitle = "Interpret: negative values indicate improvement. Consistent avg and % improv") +
-    # labels on top of bars if capped
-    # geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
-    recon_fill_scale +
-    theme_minimal()
-```
+  filter(!grepl("Base-S|OLS-S|sample", model_label))
 
-```{r Energy}
 {
   energy_df <- score_list$energy[,1:11] |> 
     as_tibble(rownames = "iter") |>
@@ -321,15 +308,44 @@ score_df |>
     # filter unwanted models
     filter(.model != "mint_sample") |>
     encode_recon_models() |> 
-    filter(!grepl("Ba|OLS-S|sample", model_label))
+    filter(!grepl("Base-S|OLS-S|sample", model_label)) |> 
+    group_by(family, model_label, pc_k) |>
+    summarise(
+      mean_score = mean(score),
+      pct_change_avg = mean(pct_change_per_series)
+    )
+  
+  energy_df <- energy_df |> 
+    mutate(rule = "Energy") |> 
+    select(rule, everything())
 }
+
+score_df <- score_df |> 
+  rbind(energy_df)
+```
+
+```{r WS and CRPS}
+# Consistent plotting:
+# average across series per iteration -> compute % improv per iter -> average across iter
+score_label <- "CRPS"
+score_df |> 
+  filter(rule == score_label) |>
+  ggplot(aes(x = model_label, y = pct_change_avg, fill = family, alpha=pc_k)) +
+    geom_col(color = "black", size = 0.5) +
+    scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
+    labs(x = "Model", y = "% improvements",
+         title = paste("Average of % relative improvements in", score_label, "compared to Base", strsplit(file, "_M")[[1]][1]),
+         subtitle = "Interpret: negative values indicate improvement. Consistent avg and % improv") +
+    # labels on top of bars if capped
+    # geom_text(aes(label = ifelse(capped == 1, "> 10%", "")), vjust = -0.5) +
+    recon_fill_scale +
+    theme_minimal()
+```
+
+```{r Energy}
 # overall energy score per model
-energy_df |> 
-  group_by(family, model_label, pc_k) |>
-  summarise(
-    mean_score = mean(score),
-    pct_change_avg = mean(pct_change_per_series)
-  ) |>
+score_df |>
+  filter(rule == "Energy") |>
   ggplot(aes(x = model_label, y = pct_change_avg, fill = family, alpha=pc_k)) +
     geom_col(color = "black", size = 0.5) +
     scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
