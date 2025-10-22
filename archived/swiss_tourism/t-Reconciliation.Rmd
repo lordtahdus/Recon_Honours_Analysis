@@ -1,0 +1,374 @@
+---
+title: "t-Reconciliation"
+author: ""
+date: ""
+lang: "en"
+output: html_vignette
+bibliography: references.bib
+cite:
+- '@zambon2024properties'
+
+vignette: >
+  %\VignetteIndexEntry{t-Reconciliation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval=TRUE ### !!!! set to FALSE here to render only the text !!!!
+)
+set.seed(27)
+```
+
+# Introduction
+
+This vignette shows how to perform *t-reconciliation*, a Bayesian approach to forecast reconciliation that explicitly accounts for uncertainty in the covariance matrix of residuals.
+
+By exploiting the flexibility of Bayesian models to incorporate parameter uncertainty, we place an Inverse-Wishart prior on the covariance matrix. This choice allows the reconciliation to be derived in closed form, resulting in a reconciled predictive distribution that follows a multivariate t.
+
+# Installation
+
+The packages needed :
+
+```{r install, eval=FALSE}
+install.packages('forecast', dependencies = TRUE)
+install.packages('bayesRecon', dependencies = TRUE)
+install.packages('nloptr', dependencies = TRUE)
+install.packages('ggplot2', dependencies = TRUE)
+install.packages('dplyr', dependencies = TRUE)
+install.packages('tidyr', dependencies = TRUE)
+```
+
+Load the packages:
+
+```{r load}
+library(forecast) #for base forecasts
+library(bayesRecon) #for schafer and strimmer shrinkage
+library(nloptr) #for LOO 
+library(mvtnorm) #for representing the distribution
+# for plot
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+```
+
+# Loading the dataset
+
+The example presented uses monthly Swiss overnight stays data, which are publicly available on the official website of the Swiss Confederation. The hierarchical structure is cross-sectional, consisting of two levels: the national total and the division by canton.
+
+The dataset spans the period from January 2005 to January 2025, comprising 241 monthly observations.
+
+The time series exhibit strong seasonality. As an example, we plot the data for the top-level (aggregate) series below.
+
+```{r swiss-tourism-plot, dpi=300, out.width = "100%", fig.align='center', fig.cap="**Figure 1**: Swiss tourism - monthly Swiss overnight stays.", fig.dim = c(6, 3)}
+
+dir_path = dirname(rstudioapi::getSourceEditorContext()$path)
+
+Y = readRDS(paste0(dir_path, "/data/data_Swiss_tourism.RDS"))
+cantons = rownames(Y)
+
+Y = ts(t(Y), start = c(2005, 1), frequency = 12)
+
+plot.ts(Y[, 1], xlab = "Time", ylab = "Overnight stays Switzerland", main = NULL)
+```
+
+We load the aggregation matrix and set the model parameters. The length of the training set can be selected within the range [26, 240] observations.
+
+```{r Swiss tourism}
+
+A = readRDS(paste0(dir_path, "/data/A_Swiss_tourism.RDS"))
+
+n_b = ncol(A)
+n_u = nrow(A)
+n = n_b + n_u
+
+S = rbind(A, diag(rep(1, n_b))) 
+
+# L = ncol(Y) #This parameter can be chosen differently
+L = 46 
+freq = 12
+
+h = 1
+
+train = window(Y, end = time(Y)[L])
+actuals = window(Y, start= time(Y)[L + 1], end = time(Y)[L + h])
+
+
+check.seasonality = as.logical(apply(Y, 2, function(row) nsdiffs(ts(row, frequency = freq))))
+
+```
+
+# Reconciliation
+
+The base forecasts are generated using the ets() function from the forecast package, which fits exponential smoothing models to each time series.
+
+To address potential instability in the estimation of the residual covariance matrix, particularly when the number of observations is limited, we apply a slight shrinkage to the sample covariance matrix.
+
+```{r Base-forecasts and residuals computation}
+
+##############################Base forecasts#####################################
+base_fc = matrix(NA, ncol = h, nrow = n)
+res = matrix(NA, ncol = n, nrow = L)
+
+for (i in 1:n){
+    models = forecast::ets(ts(train[,i ], frequency = freq), model = "AZZ")
+    f = forecast(models, h = h)
+    base_fc[i, ] = f$mean
+    res[, i] = models$residuals
+}
+# get fitted values
+y_fitted <- train - res
+
+Sigma = crossprod(res)/nrow(res)
+Sigmahat = (1 - 10^-4)* Sigma + 10^-4 * diag(diag(Sigma))
+
+```
+
+The Inverse-Wishart distribution used as a prior has two parameters: the degrees of freedom $\nu$, and the scale matrix $\Sigma$.
+
+The prior parameters are computed as follows:
+
+-   $\Sigma_0$ is set as the covariance matrix of the residuals obtained from either the naive or seasonal naive forecasting methods, fitted on the training set.\
+    If the training set is too short, specifically, shorter than twice the seasonal frequency, only the naive model is used to compute $\Sigma_0$.\
+    This is because the seasonal naive method requires at least two seasonal cycles to produce meaningful residuals, and fewer than two observations per season are insufficient to estimate the prior.
+
+-   $\nu_0$ is estimated by maximizing the sum of the log of the leave-one-out multivariate t predictive distributions.\
+    This objective function is referred to as `objective_function` in the code below.
+
+```{r Prior IW parameters computation}
+#####################Prior parameters computation###############################
+res_naive = matrix(NA, ncol = n, nrow = L)
+if (nrow(train) <= 2*freq){
+      for (i in 1:n){
+          models = forecast::naive(ts(train[,i ]))
+          f = forecast(models, h = h)
+          res_naive[, i] = models$residuals
+      }
+  
+    res = res[2:nrow(train), ]
+   }else{
+        for (i in 1:n){
+            models = if (check.seasonality[i]) {
+              forecast::snaive(ts(train[,i], frequency = freq))
+            }else {
+                forecast::naive(ts(train[i,]))}
+            f = forecast(models, h = h)
+            res_naive[, i] = models$residuals
+        }
+      res_naive = res_naive[(freq + 1):nrow(train), ]
+   }
+    
+      
+      naive_mat = schaferStrimmer_cov(res_naive)$shrink_cov
+      
+      
+    n_obs = nrow(res_naive)
+    n_obs_effective = round(0.1*n_obs)
+    inv_sigma_fun = function(x){solve(((naive_mat * (x - n - 1)) + crossprod(res_naive)))}
+    log_det_sigma_fun = function(x){sum(log(eigen(((naive_mat * (x - n - 1)) + 
+                                                 crossprod(res_naive)))$values))}
+    
+    log_den_tz_inv_sigma_z_fun = function(l, inv_sigma){log((1 - (((res_naive[l, ])%*%inv_sigma%*%(res_naive[l,])))))}
+    
+    objective_function = function(x){
+      inv_sigma = inv_sigma_fun(x)
+      
+      log_det_sigma = log_det_sigma_fun(x)
+      
+      - ((n_obs - n_obs_effective)*(lgamma((x + n_obs)/2)- 
+                                      lgamma((x + n_obs - n)/2) -
+           (log_det_sigma/2)) + ((x + n_obs - 1)/2)*
+           sum(sort(vapply(1:n_obs, function(l){log_den_tz_inv_sigma_z_fun(l, inv_sigma)}, 
+                   numeric(1)))[(n_obs_effective + 1):n_obs]))
+    }
+    
+    initial_guess = n + 2
+    
+    lower_bounds = n + 2
+    upper_bounds = 5*n
+    
+    opts = list("algorithm" = "NLOPT_LN_BOBYQA", "xtol_rel" = 10^-5, 
+                "maxeval" = 1000)
+    
+    results = nloptr(x0 = initial_guess, eval_f = objective_function, 
+                     lb = lower_bounds, ub = upper_bounds, opts = opts)
+    
+    prior.nu = results[[1]]
+    prior.psi = (naive_mat)*(prior.nu - n - 1)
+    
+```
+
+Since the Inverse-Wishart distribution is conjugate to the Multivariate Gaussian distribution, the posterior distribution of the covariance matrix remains an Inverse-Wishart with updated parameters.
+
+These posterior parameters are then used during the reconciliation phase. The approach is conceptually similar to Gaussian reconciliation via conditioning [@zambon2024properties], with two key differences:
+
+-   the reconciled distribution is a multivariate t-distribution;
+-   the incoherence term ($|\mathbf{A} \mathbf{\hat{b}} - \hat{u}|$) appears in the scale parameter, allowing for a more flexible representation of uncertainty.
+
+```{r t-Reconciliation}
+####################t-Reconciliation##########################################
+
+posterior.psi = (n_obs * Sigmahat) + prior.psi
+posterior.nu = prior.nu + n_obs
+Psi_u = posterior.psi[1:n_u, 1:n_u]
+Psi_b = posterior.psi[(n_u + 1):n, (n_u + 1):n]
+Psi_ub = posterior.psi[1:n_u, (n_u + 1):n, drop = FALSE]
+mu_u = base_fc[1:n_u]
+mu_b = base_fc[(n_u + 1):n]
+inco = ((A %*% mu_b) - mu_u)
+Q = Psi_u - (Psi_ub %*% t(A)) - (A %*% t(Psi_ub)) + (A %*% 
+                                                       Psi_b %*% t(A))
+invQ = solve(Q)
+C = 1 + ((t(inco) %*% invQ %*% inco))
+nu_b_tilde = posterior.nu - n_b + 1
+mu_b_tilde = mu_b + (t(Psi_ub) - Psi_b %*% t(A)) %*% 
+  invQ %*% inco
+Sigma_b_tilde = as.numeric(C/nu_b_tilde) * (Psi_b - ((t(Psi_ub) - (Psi_b %*% t(A))) %*% 
+                                                         invQ %*% t(t(Psi_ub) - (Psi_b %*% t(A)))))
+  
+  
+
+#######################t predictive distribution###################### 
+t_Rec_reconciled_mean = S %*% mu_b_tilde
+t_Rec_scale_par = S %*% Sigma_b_tilde %*% t(S)
+t_Rec_df = nu_b_tilde
+
+```
+
+# Comparison of results
+
+For the selected data window, we compute and compare the predictive densities of the upper-level time series using four different methods: the base forecasts (Base), Bottom-Up reconciliation (BU), Minimum Trace reconciliation (MinT), and t-Reconciliation (t-Rec).
+
+```{r MinT, BU, Base and t-Rec}
+
+#BU reconciliation
+BU_reconciled_mean = S %*% base_fc[(n_u + 1):n]
+BU_cov_mat = S %*% Sigmahat[(n_u + 1):n, (n_u + 1):n] %*% t(S)
+
+
+#MinT reconciliation with shrunk matrix
+SigmahatS = schaferStrimmer_cov(res)$shrink_cov
+recon_gauss = reconc_gaussian(A, base_fc, SigmahatS)
+MinT_reconciled_mean = S %*% recon_gauss$bottom_reconciled_mean
+MinT_cov_mat = S %*% recon_gauss$bottom_reconciled_covariance %*% t(S)
+
+# ============= ReconCov 
+# check MinT
+SigmahatS == shrinkage_est(res)$cov # TRUE
+all.equal(MinT_reconciled_mean, t(reconcile_mint(t(base_fc), S, SigmahatS))) # TRUE
+
+# novelist
+Sigma_n <- novelist_cv(
+  train, y_fitted, S,
+  30
+)$cov
+MinT_n_recon <- t(reconcile_mint(t(base_fc), S, Sigma_n))
+P <- t(S) %*% solve(Sigma_n)
+G <- solve(P %*% S) %*% P
+Mint_n_cov <- S %*% G %*% Sigma_n %*% t(G) %*% t(S)
+
+# pc models
+
+#Base forecasts
+Base_reconciled_mean = base_fc
+Base_cov_mat = Sigmahat
+  
+# Index of the upper variable to plot
+i_upper <- 1  # change this if a different index is needed
+
+# Extract distribution's parameters for each method
+# BU
+mu_BU <- as.numeric(BU_reconciled_mean[i_upper])
+sd_BU <- sqrt(BU_cov_mat[i_upper, i_upper])
+
+# MinT
+mu_MinT <- as.numeric(MinT_reconciled_mean[i_upper])
+sd_MinT <- sqrt(MinT_cov_mat[i_upper, i_upper])
+
+# MinT with novelist
+mu_MinT_n <- as.numeric(MinT_n_recon[i_upper])
+sd_MinT_n <- sqrt(Mint_n_cov[i_upper, i_upper])
+
+# t-Rec
+mu_tRec <- as.numeric(t_Rec_reconciled_mean[i_upper])
+scale_tRec <- sqrt(t_Rec_scale_par[i_upper, i_upper])
+df_tRec <- t_Rec_df
+
+#Base
+mu_Base <- as.numeric(Base_reconciled_mean[i_upper])
+sd_Base <- sqrt(Base_cov_mat[i_upper, i_upper])
+
+# Create a grid of x values
+x_vals <- seq(
+  min(mu_BU, mu_MinT, mu_MinT_n, mu_tRec, mu_Base) - 4*max(sd_BU, sd_MinT, sd_MinT_n, scale_tRec, sd_Base),
+  max(mu_BU, mu_MinT, mu_MinT_n, mu_tRec, mu_Base) + 4*max(sd_BU, sd_MinT, sd_MinT_n, scale_tRec, sd_Base),
+  length.out = 1000
+)
+
+# Compute densities
+dens_BU <- dnorm(x_vals, mean = mu_BU, sd = sd_BU)
+dens_MinT <- dnorm(x_vals, mean = mu_MinT, sd = sd_MinT)
+dens_MinT_n <- dnorm(x_vals, mean = mu_MinT_n, sd = sd_MinT_n)
+dens_tRec <- dt((x_vals - mu_tRec) / scale_tRec, df = df_tRec) / scale_tRec
+dens_Base <- dnorm(x_vals, mean = mu_Base, sd = sd_Base)
+
+max_y <- max(dens_BU, dens_MinT, dens_MinT_n, dens_tRec, dens_Base)
+
+```
+
+```{r comparison-plot, dpi=300, out.width = "100%", fig.align='center', fig.cap="**Figure 2**: Predictive densities of the upper time series obtained with BU (yellow), MinT (purple), t-Rec (green) and Base (blue).", fig.dim = c(4, 4)}
+
+dens_df <- data.frame(
+  x = x_vals,
+  BU = dens_BU,
+  MinT = dens_MinT,
+  MinT_n = dens_MinT_n,
+  "t-Rec" = dens_tRec,
+  Base = dens_Base,
+  check.names = "FALSE"
+) %>%
+  pivot_longer(cols = -x, names_to = "Method", values_to = "Density")
+
+method_colors <- c(
+  "BU" = "#FDE725",
+  "MinT" = "#440154",
+  "MinT_n" = "#c45252ff",
+  "t-Rec" = "#29AF7F",
+  "Base" = "#3B528B"
+)
+
+ggplot(dens_df, aes(x = x, y = Density, color = Method)) +
+  geom_area(
+    data = filter(dens_df, Method %in% c("MinT", "t-Rec")),
+    aes(fill = Method),
+    position = "identity",
+    alpha = 0.3,
+    color = NA
+  ) +
+  geom_line(linewidth = 1.5) +
+  scale_color_manual(values = method_colors) +
+  scale_fill_manual(values = method_colors) +
+  guides(fill = "none") +
+  labs(
+    title = "Predictive densities of upper time series",
+    x = "",
+    y = ""
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "top",
+    legend.title = element_blank(),
+    axis.title = element_blank(),       
+    axis.text = element_blank(),       
+    axis.ticks = element_blank()
+  )
+
+```
+
+
+# References
+<div id="refs"></div>

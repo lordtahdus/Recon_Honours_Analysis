@@ -48,11 +48,12 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
-# sim results ======================
-job/S16-4-1/T100_M100_run1_er.rds
-job/S16-4-1/T300_M100_run2_er.rds
-job/S36-6-1/T100_M100_run1_er.rds
-job/S36-6-1/T300_M100_run2_er.rds
+# old job sim results ======================
+archived/sim_job/S16-4-1/T100_M100_run1_er.rds
+archived/sim_job/S16-4-1/T300_M100_run2_er.rds
+archived/sim_job/S36-6-1/T100_M100_run1_er.rds
+archived/sim_job/S36-6-1/T300_M100_run2_er.rds
 
-# swiss analysis files ===========
-swiss_tourism/
+# sim for thesis files ===========
+sim/thesis_sim/S100_10_3_1_dense_T300_M500.rds
+sim/thesis_sim/S100_10_3_1_sparse46_T300_M500.rds
