@@ -13,18 +13,19 @@ For more details, please refer to the accompanying thesis document [here](link_t
 
 Below are links to key scripts producing results for the thesis:
 
-Simulations
+**Simulations**
 
-- [Simulation scripts (parallel locally)](sim/sim_parallel.R)
-- [Computing scores (probabilistic forecasts) for simulations]
-- [Wrangling simulation results and generating plots for thesis]
+- [Simulation scripts (parallel locally)](thesis_sim/main.R)
+- [Computing scores (probabilistic forecasts) for simulations](thesis_sim/main_score.R)
+- [Wrangling simulation results and generating plots for thesis](thesis_sim/read_results_thesis_sim.R)
 
-Australian Tourism Forecasting
+**Australian Tourism Forecasting**
 
-- [Tourism forecasting scripts (on computing cluster)]
-- [Computing scores (probabilistic forecasts) for tourism]
-- [Wrangling tourism results and generating plots for thesis]
-- [Wrangling tourism results and generating plots (for multi-step covariance) for thesis]
+- [Tourism forecasting scripts (on computing cluster)](tourism/job/tourism_run.R)
+- [Tourism forecasting scripts for multi-step covariance (on computing cluster)](tourism/job/tourism_run_newcov.R)
+- [Computing scores (probabilistic forecasts) for tourism](tourism/job/results/read_results_cluster.Rmd)
+- [Wrangling tourism results and generating plots for thesis (point reconciliation)](tourism/job/results_newcov/read_results_newcov.Rmd)
+- [Wrangling tourism results and generating plots for thesis (probabilistic reconciliation)](tourism/job/results/read_results_cluster.Rmd)
 
 
 ## Repository Structure
