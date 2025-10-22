@@ -8,6 +8,7 @@ This work is part of the Honours research project:
 
 For more details, please refer to the accompanying thesis document [here](link_to_thesis_document).
 
+\vspace{2em}
 
 ## Quick Access to Key Scripts
 
@@ -15,9 +16,9 @@ Below are links to key scripts producing results for the thesis:
 
 **Simulations**
 
-- [Simulation scripts (parallel locally)](thesis_sim/main.R)
-- [Computing scores (probabilistic forecasts) for simulations](thesis_sim/main_score.R)
-- [Wrangling simulation results and generating plots for thesis](thesis_sim/read_results_thesis_sim.R)
+- [Simulation scripts (parallel locally)](sim/thesis_sim/main.R)
+- [Computing scores (probabilistic forecasts) for simulations](sim/thesis_sim/main_score.R)
+- [Wrangling simulation results and generating plots for thesis](sim/thesis_sim/read_results_thesis_sim.R)
 
 **Australian Tourism Forecasting**
 
@@ -26,6 +27,9 @@ Below are links to key scripts producing results for the thesis:
 - [Computing scores (probabilistic forecasts) for tourism](tourism/job/results/read_results_cluster.Rmd)
 - [Wrangling tourism results and generating plots for thesis (point reconciliation)](tourism/job/results_newcov/read_results_newcov.Rmd)
 - [Wrangling tourism results and generating plots for thesis (probabilistic reconciliation)](tourism/job/results/read_results_cluster.Rmd)
+
+
+\vspace{2em}
 
 
 ## Repository Structure
