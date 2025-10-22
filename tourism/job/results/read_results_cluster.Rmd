@@ -1313,7 +1313,6 @@ plot_df |>
   group_by(level, .model) |> 
   summarise(mean_coverage = mean(coverage)) |> 
   encode_recon_models() |> 
-  mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k))) |> 
   ggplot(aes(x = model_label, y = mean_coverage, fill = family, alpha = pc_k)) +
     geom_col(color = "black", size = 0.5) +
     scale_alpha_manual(values = c("0" = 1, "1" = 0.7, "2" = 0.4), guide = "none") +
