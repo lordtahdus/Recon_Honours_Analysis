@@ -43,3 +43,8 @@ Below are links to key scripts producing results for the thesis:
 
 -   `archived/job/`: Contains initial scripts for running old simulations on computing clusters.
 -   `archived/swiss_tourism/`: Contains scripts for Swiss tourism forecasting.
+
+<br> <br>
+
+R package developed for this research can be found here: [ReconCov](https://github.com/lordtahdus/ReconCov)
+
