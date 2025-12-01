@@ -9,7 +9,7 @@ library(vctrs)
 
 
 # ------------------------------------------------
-# Tourism data
+# Tourism data -----------------------------------
 # ------------------------------------------------
 
 visnights_full <- readRDS("tourism/data/visnights_full.rds")
@@ -59,12 +59,12 @@ ggplot() +
 
 
 # ------------------------------------------------
-# Controlled settings
+# Controlled settings ---------------------------
 # ------------------------------------------------
 
 params <- readRDS("sim/thesis_sim/params_S4_2_1.rds")
 
-# 1. 2-level hierarchy ---------------------
+## 1. 2-level hierarchy ---------------------
 bottom <- simulate_bottom_var(params$groups, 100, intercept = 100, A=params$A, Sig=params$Sigma)$Y
 hts_mat <- bottom %*% t(params$S)
 
@@ -103,7 +103,7 @@ ggplot() +
   geom_line(aes(x = 1:20, y = head(hts_res_eigen, 20), color = "HTS Residuals"))
 
 
-# 2. Simulate from a factor structure ---------------------
+## 2. Simulate from a factor structure ---------------------
 set.seed(1)
 
 # params <- readRDS("sim/thesis_sim/params_S36_6_1.rds")
@@ -175,11 +175,7 @@ ggplot() +
 
 
 
-
-
-
-
-# 3. Nearly uniform eigenvalues ---------------------
+## 3. Nearly uniform eigenvalues ---------------------
 set.seed(1)
 
 S <- readRDS("sim/thesis_sim/params_S100_10_3_1_dense.rds")$S
@@ -201,15 +197,20 @@ eigen(cov2cor(Sigma))$values |> plot(ylim = c(0, 5))
 eigen(cov2cor(S %*% Sigma %*% t(S)))$values[1:114] |> plot(ylim = c(0, 5))
 
 
-params <- readRDS("sim/thesis_sim/params_S100_10_3_1_dense.rds")
-S <- params$S
+# testing with different S structure
+structure <- list(
+  rep(5,20),
+  as.list(1:20),
+  list(1:8, 9:12, 13:20),
+  list(1:3)
+)
 
-plot_heatmap(S)
-
-params <- readRDS("sim/thesis_sim/params_S36_6_1.rds")
-S <- params$S
-eigen(cov2cor(params$Sigma))$values |> plot()
-eigen(cov2cor(S %*% params$Sigma %*% t(S)))$values |> plot()
+S <- construct_S(
+  structure = structure,
+  sparse = FALSE,
+  ascending = FALSE
+)
+S |> plot_heatmap()
 
 
 # # Simulate the data from Sigma
