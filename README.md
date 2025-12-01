@@ -6,7 +6,7 @@ This work is part of the Honours research project:
 
 **Enhancing Forecasting Reconciliation: A Study of Alternative Covariance Estimators**
 
-For more details, please refer to the accompanying thesis document [here](link_to_thesis_document).
+For more details, please refer to the accompanying thesis document [here](https://github.com/lordtahdus/Recon_Honours_Thesis/blob/master/Honours_thesis_25_VincentSu.pdf).
 
 ## Quick Access to Key Scripts
 
@@ -43,3 +43,8 @@ Below are links to key scripts producing results for the thesis:
 
 -   `archived/job/`: Contains initial scripts for running old simulations on computing clusters.
 -   `archived/swiss_tourism/`: Contains scripts for Swiss tourism forecasting.
+
+<br> <br>
+
+R package developed for this research can be found here: [ReconCov](https://github.com/lordtahdus/ReconCov)
+
