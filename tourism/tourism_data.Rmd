@@ -213,6 +213,23 @@ fit <- visnights_full |>
   #   mint_shr = min_trace(base, method = "mint_shrink")
   # )
 
+# Screeplot from residuals
+resid <- fit %>%
+  augment() %>%
+  as_tibble() %>%
+  filter(.model == "base") %>%
+  select(Month, State, Zone, Region, Purpose, .resid) %>%
+  pivot_wider(names_from = c(State, Purpose, Zone, Region), values_from = .resid) %>%
+  select(-Month) %>%
+  as.matrix()
+
+(eigen(cov(resid))$values[1:20]/1e6) %>%
+  plot(type = "b",
+       xlab = "Component",
+       ylab = "Eigenvalue ('000,000)"
+  )
+
+
 # base forecasts
 h <- 12
 fc <- fit %>% 
