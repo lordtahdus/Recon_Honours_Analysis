@@ -1,0 +1,284 @@
+---
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+# library(MASS)
+# library(matrixcalc)
+library(Matrix)
+library(tidyr)
+library(ggplot2)
+
+library(fabletools)
+library(fable)
+library(feasts)
+library(tsibble)
+library(dplyr)
+library(tibble)
+library(fmsb) #radarchart
+library(distributional)
+
+# library(devtools)
+# load_all()
+library(ReconCov)
+library(purrr)
+
+source("R/helpers.R")
+```
+
+```{r}
+visnights_full <- readRDS("tourism/data/visnights_full.rds")
+S <- readRDS("tourism/data/S.rds")
+row_names <- readRDS("tourism/data/row_names.rds")
+seq_dates <- readRDS("tourism/job/seq_dates.rds")
+
+result_list_shrPCstd <- readRDS("result_shrPCstd_97.rds")
+model_names_shrPCstd <- result_list_shrPCstd[[1]]$e |> names()
+h <- 12
+
+path <- "D:/Github/tourism_cluster/results/"
+result_list <- list()
+M <- 97
+for (i in 1:M) {
+  result <- readRDS(paste0(path, "result_", i, ".rds"))
+  result_list[[i]] <- result[-3] # not taking the base fitted models
+}
+# flatten out the sublist in `e`
+flatten_e_list <- function(e_list) {
+  out <- list()
+  for (name in names(e_list)) {
+    obj <- e_list[[name]]
+    if (is.list(obj) && all(vapply(obj, is.matrix, logical(1)))) {
+      ## e.g. name == "mint_shr_pc", obj contains K1 … K20
+      for (k in names(obj)) {
+        out[[paste(name, k, sep = "_")]] <- obj[[k]]   # “mint_shr_pc_K1”, …
+      }
+    } else {
+      out[[name]] <- obj                               # “base”, “ols”, …
+    }
+  }
+  out                                             # all matrices at top level
+}
+all_model_names <- names(flatten_e_list(result_list[[1]]$e))
+```
+
+# Point
+
+```{r}
+improv_df <- tibble(
+  .model = character(0),
+  iter = integer(0),
+  h = integer(0),
+  MSE = numeric(0),
+  pct_change = numeric(0)
+)
+model_names <- all_model_names[!grepl("ols|_n|K20", all_model_names)]
+
+for (i in 1:length(result_list)) {
+  e_list <- flatten_e_list(result_list[[i]]$e)
+  # average across series for base model
+  base_MSE <- rowMeans(e_list$base^2)
+  for (model in c(model_names, model_names_shrPCstd)) {
+    # average across series each horizon, iteration
+    if (model %in% model_names) MSE <- rowMeans(e_list[[model]]^2)
+    else MSE <- rowMeans(result_list_shrPCstd[[i]]$e[[model]]^2)
+
+    pct_change <- (MSE - base_MSE) / base_MSE * 100
+    improv_df <- rbind(
+      improv_df,
+      tibble(
+        .model = rep(model, length(MSE)),
+        iter = rep(i, length(MSE)),
+        h = 1:length(MSE),
+        MSE = MSE,
+        pct_change = pct_change
+      )
+    )
+  }
+}
+
+# average across iterations
+improv_df <- improv_df |> 
+  group_by(.model, h) |> 
+  summarise(
+    MSE = mean(MSE),
+    pct_change = mean(pct_change)
+  ) |> 
+  ungroup()
+
+# improv_df <- encode_recon_models(improv_df)
+
+# plotting
+improv_df |>
+  # reverse signs of pct_change
+  mutate(pct_change = -pct_change) |>
+  filter(!grepl("_K", .model)) |> 
+#   filter(grepl("base|", .model)) |>
+  ggplot(aes(x = h, y = pct_change, color = .model)) +
+  geom_line(linewidth = 0.8)
+```
+
+# Probabilistic
+
+## Get scores
+
+```{r}
+library(distributional)
+
+M <- 97
+
+#   row - CV iterations
+#   col - series
+result_winklers_80_PC <- setNames(
+  lapply(model_names_shrPCstd, function(name) {
+    matrix(0, M, length(rownames(S)), dimnames = list(1:M, rownames(S)))
+  }),
+  model_names_shrPCstd
+)
+result_winklers_95_PC <- result_winklers_80_PC
+result_crps_PC <- result_winklers_80_PC
+
+# Get actual data
+y <- visnights_full |> 
+  as_tibble() |> 
+  arrange(State, Region) |>
+  left_join(row_names, by = c("State", "Zone", "Region", "Purpose")) |>
+  select(name, Nights, Month) |>
+  pivot_wider(names_from = name, values_from = Nights) |>
+  select(-Month) |>
+  as.matrix()
+y <- y[, rownames(S)]
+
+vectorise_winkler <- function(mu, sd, actual, interval) {
+  if (length(mu) == 0 || length(sd) == 0) {
+    stop("mu or sd empty")
+  }
+  sapply(
+    rownames(S),
+    function(series) winkler_score(
+      dist_normal(mu[series], sd[series]),
+      actual[series],
+      interval
+    )
+  )
+}
+
+vectorise_crps <- function(mu, sd, actual) {
+  if (length(mu) == 0 || length(sd) == 0) {
+    stop("mu or sd empty")
+  }
+  sapply(
+    rownames(S),
+    function(series) CRPS(
+      dist_normal(mu[series], sd[series]),
+      actual[series]
+    )
+  )
+}
+
+start_date <- seq_dates$start[1]
+
+for (i in 51:97) {
+  
+  result <- result_list_shrPCstd[[i]]
+  resid <- result_list[[i]]$resid
+
+  actual <- y[seq_dates$end[i] + 1 - start_date + 1, ] # 1-step ahead actuals
+
+  for (model in model_names_shrPCstd) {
+
+    W <- shrinkage_pc_est(
+      resid,
+      strsplit(model, split = "")[[1]][2] |> as.numeric(),
+      result$W_shr[[model]]
+    )$cov
+
+    P <- t(S) %*% solve(W)
+    G <- solve(P %*% S) %*% P
+    
+    # get reconciled forecast and covariance
+    
+    y_recon <- actual - result$e[[model]][1, ]
+    
+    W1_recon <- S %*% G %*% W %*% t(G) %*% t(S)
+
+    # Winkler score for reconciled model
+    result_winklers_80_PC[[model]][i, ] <- vectorise_winkler(
+      mu = y_recon, sd = sqrt(diag(W1_recon)), actual, 80
+    )
+    result_winklers_95_PC[[model]][i, ] <- vectorise_winkler(
+      mu = y_recon, sd = sqrt(diag(W1_recon)), actual, 95
+    )
+    # CRPS for reconciled model
+    result_crps_PC[[model]][i, ] <- vectorise_crps(
+      mu = y_recon, sd = sqrt(diag(W1_recon)), actual
+    )
+  }
+  cat("Done", i, "\n")
+}
+
+
+```
+
+
+
+```{r}
+result_winklers_80 <- readRDS("tourism/job/results/result_winklers_80_new.rds")[c(1,2,3,5)]
+result_winklers_95 <- readRDS("tourism/job/results/result_winklers_95_new.rds")[c(1,2,3,5)]
+result_crps <- readRDS("tourism/job/results/result_crps_new.rds")[c(1,2,3,5)]
+
+result_winklers_80 <- c(result_winklers_80, result_winklers_80_PC) |> 
+  transform_sim_MSE(F) |> 
+    # change column name "h" to "iter", "MSE" to "score"
+  rename(
+    iter = h, 
+    score = MSE
+  ) |>
+  filter(iter <= 97)
+result_winklers_95 <- c(result_winklers_95, result_winklers_95_PC) |> 
+  transform_sim_MSE(F) |> 
+    # change column name "h" to "iter", "MSE" to "score"
+  rename(
+    iter = h, 
+    score = MSE
+  ) |>
+  filter(iter <= 97)
+result_crps <- c(result_crps, result_crps_PC) |> 
+  transform_sim_MSE(F) |> 
+    # change column name "h" to "iter", "MSE" to "score"
+  rename(
+    iter = h, 
+    score = MSE
+  ) |>
+  filter(iter <= 97)
+```
+
+
+```{r}
+result_winklers_80 |>
+  group_by(series, iter) |>
+  mutate(
+    base_score = score[.model == "base"]
+  ) |>
+  ungroup() |>
+  group_by(.model, iter) %>%
+  summarise(
+    score = mean(score),
+    base_score = mean(base_score),
+    pct_change = (base_score - score) / base_score * 100,
+    .groups = "drop_last"
+  ) %>%
+  ungroup() %>%
+  group_by(.model) %>%
+  summarise(
+    pct_change_avg = mean(pct_change),   # cap at 10
+    capped = as.integer(pct_change_avg >= 10),
+    .groups = "drop"
+  ) %>%
+  # filter(model_label != "Base", model_label != "OLS-S") %>%
+  # mutate(pc_k = ifelse(is.na(pc_k), "0", as.character(pc_k))) %>%
+  # ggplot
+  ggplot(aes(x = .model, y = pct_change_avg,
+             fill = .model)) +
+    geom_col(color = "black", size = 0.5)
+```
