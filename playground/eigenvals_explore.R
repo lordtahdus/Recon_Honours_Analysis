@@ -16,8 +16,10 @@ visnights_full <- readRDS("tourism/data/visnights_full.rds")
 
 # Eigenvalues of raw data
 y_mat <- visnights_full |>
+  filter(is_aggregated(Purpose)) |> 
   as_tibble() |>
-  pivot_wider(id_cols = Month, names_from = c(State, Purpose, Zone, Region), values_from = Nights) |>
+  # pivot_wider(id_cols = Month, names_from = c(State, Purpose, Zone, Region), values_from = Nights) |>
+  pivot_wider(id_cols = Month, names_from = c(State, Zone, Region), values_from = Nights) |>
   select(-Month) |>
   as.matrix()
 bottom_idx <- which(
@@ -26,8 +28,8 @@ bottom_idx <- which(
 bottom_eigen <- eigen(cor(y_mat[, bottom_idx]))$values
 hts_eigen <- eigen(cor(y_mat))$values
 ggplot() +
-  geom_line(aes(x = 1:20, y = head(bottom_eigen, 20), color = "Bottom")) +
-  geom_line(aes(x = 1:20, y = head(hts_eigen, 20), color = "HTS"))
+  geom_point(aes(x = 1:20, y = head(bottom_eigen, 20), color = "Bottom")) +
+  geom_point(aes(x = 1:20, y = head(hts_eigen, 20), color = "HTS"))
 
 # Eigenvalues of residuals from fitted model
 fit <- readRDS("tourism/data/fit.rds")
