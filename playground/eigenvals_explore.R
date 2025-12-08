@@ -7,6 +7,17 @@ library(ReconCov)
 library(ggplot2)
 library(vctrs)
 
+structure <- list(
+  rep(10,10),
+  as.list(1:10),
+  list(1:3, 4:7, 8:10),
+  list(1:3)
+)
+S <- construct_S(
+  structure = structure,
+  sparse = FALSE,
+  ascending = FALSE
+)
 
 # ------------------------------------------------
 # Tourism data -----------------------------------
@@ -27,9 +38,10 @@ bottom_idx <- which(
 )
 bottom_eigen <- eigen(cor(y_mat[, bottom_idx]))$values
 hts_eigen <- eigen(cor(y_mat))$values
+
 ggplot() +
-  geom_point(aes(x = 1:20, y = head(bottom_eigen, 20), color = "Bottom")) +
-  geom_point(aes(x = 1:20, y = head(hts_eigen, 20), color = "HTS"))
+  geom_point(aes(x = 1:length(bottom_eigen), y = bottom_eigen, color = "Bottom")) +
+  geom_point(aes(x = 1:length(hts_eigen), y = hts_eigen, color = "HTS"))
 
 # Eigenvalues of residuals from fitted model
 fit <- readRDS("tourism/data/fit.rds")
@@ -46,19 +58,20 @@ resid <- fit |>
   residuals() |>
   filter(.model == "base") %>%
   as_tibble() %>%
-  select(Month, State, Zone, Region, Purpose, .resid) %>%
-  pivot_wider(names_from = c(State, Purpose, Zone, Region), values_from = .resid) %>%
+  filter(is_aggregated(Purpose)) |> # remove PUrpose 
+  select(Month, State, Zone, Region, .resid) %>%
+  pivot_wider(names_from = c(State, Zone, Region), values_from = .resid) %>%
   select(-Month) %>%
   as.matrix()
 
-bottom_idx <- which(!is_aggregated(key_data$State) & !is_aggregated(key_data$Purpose) & !is_aggregated(key_data$Zone) & !is_aggregated(key_data$Region))
-
+bottom_idx <- which(
+  grepl("<aggregated>", colnames(resid), fixed = TRUE) == FALSE
+)
 bottom_eigen <- eigen(cor(resid[, bottom_idx]))$values
 hts_eigen <- eigen(cor(resid))$values
 ggplot() +
-  geom_line(aes(x = 1:20, y = head(bottom_eigen, 20), color = "Bottom Residuals")) +
-  geom_line(aes(x = 1:20, y = head(hts_eigen, 20), color = "HTS Residuals"))
-
+  geom_point(aes(x = 1:length(bottom_eigen), y = bottom_eigen, color = "Bottom Residuals")) +
+  geom_point(aes(x = 1:length(hts_eigen), y = hts_eigen, color = "HTS Residuals"))
 
 # ------------------------------------------------
 # Controlled settings ---------------------------
@@ -252,4 +265,105 @@ S |> plot_heatmap()
 # ggplot() +
 #   geom_point(aes(x = 1:50, y = head(bottom_res_eigen, 50), color = "Bottom Residuals")) +
 #   geom_point(aes(x = 1:50, y = head(hts_res_eigen, 50), color = "HTS Residuals"))
+
+
+
+## 4. Simulate data from Identity and Explore effects of Shrinkage ---------------------
+
+set.seed(1)
+sigma <- diag(rep(1, 100))
+n <- 1000
+
+{
+bottom <- MASS::mvrnorm(n = n, mu = rep(0, ncol(sigma)), Sigma = sigma)
+hts_mat <- bottom %*% t(S)
+
+# shrinkage
+bottom_cor <- cor(bottom)
+bottom_corS <- shrinkage_est(bottom, zero_mean = FALSE)$cov |> cov2cor()
+hts_cor <- cor(hts_mat)
+hts_corS <- shrinkage_est(hts_mat, zero_mean = FALSE)$cov |> cov2cor()
+
+# Eigenvalues
+bottom_eigen <- eigen(bottom_cor)$values
+bottom_eigenS <- eigen(bottom_corS)$values
+hts_eigen <- eigen(hts_cor)$values
+hts_eigenS <- eigen(hts_corS)$values
+
+# points plot
+m <- 100
+ylim <- c(-0.01, 8)
+print(
+  ggplot() +
+    geom_point(aes(x = 1:m, y = head(bottom_eigen, m), color = "Bottom Sample")) +
+    geom_point(aes(x = 1:m, y = head(bottom_eigenS, m), color = "Bottom Shrinkage")) +
+    # geom_point(aes(x = 1:m, y = head(hts_eigen, m), color = "HTS")) +
+    # geom_point(aes(x = 1:m, y = head(hts_eigenS, m), color = "HTS Shrinkage"))
+    ylim(ylim)
+)
+
+true_hts_eigen <- eigen(cov2cor(S %*% sigma %*% t(S)))$values
+ylim <- c(-0.01, 9)
+ggplot() +
+  geom_point(aes(x = 1:m, y = head(true_hts_eigen, m), color = "True HTS")) +
+  geom_point(aes(x = 1:m, y = head(hts_eigen, m), color = "HTS Sample")) +
+  geom_point(aes(x = 1:m, y = head(hts_eigenS, m), color = "HTS Shrinkage")) +
+  ylim(ylim)
+}
+
+## 5. Mimic hase forecasts ---------------------
+
+set.seed(1)
+
+### Cov: Slight uniform eigenvalues ---------------------
+p <- 100
+lambda <- runif(p, min = 1, max = 3)
+# random orthogonal Q via QR
+A <- matrix(rnorm(p * p), nrow = p, ncol = p)
+qrA <- qr(A)
+Q <- qr.Q(qrA)
+# Sigma = Q Λ Q^T
+Sigma <- Q %*% diag(lambda) %*% t(Q)
+
+eigen(cov2cor(Sigma))$values |> plot(ylim = c(0, 3))
+
+### Cov: factor structure ---------------------
+n_factors <- 5
+loadings <- matrix(rnorm(p * n_factors, sd = 0.3), nrow = p, ncol = n_factors)
+Sigma <- loadings %*% t(loadings) + diag(rep(1, p))
+eigen(cov2cor(Sigma))$values |> plot()
+
+
+### Simulate data ---------------------
+
+W <- S %*% Sigma %*% t(S)
+# plot_heatmap((abs(W))^(1/5))
+# add some noise to the covariance
+noise <- matrix(rnorm(nrow(W)*ncol(W), sd = 0.05) |> abs(), nrow = nrow(W))
+noise[upper.tri(noise)] <- t(noise)[upper.tri(noise)]
+W <- W + noise + diag(rep(0.3, nrow(W))) 
+W_eigen <- eigen(cov2cor(W))$values
+plot(W_eigen)
+
+n <- 1000
+
+{
+y <- MASS::mvrnorm(n = n, mu = rep(0, ncol(W)), Sigma = W)
+W_sample <- cor(y)
+W_sample_eigen <- eigen(W_sample)$values
+
+W_S <- shrinkage_est(y, zero_mean = FALSE)$cov |> cov2cor()
+W_S_eigen <- eigen(W_S)$values
+
+m <- nrow(W)
+ggplot() +
+  geom_point(aes(x = 1:m, y = head(W_eigen, m), color = "True Covariance")) +
+  geom_point(aes(x = 1:m, y = head(W_sample_eigen, m), color = "Sample Covariance")) +
+  geom_point(aes(x = 1:m, y = head(W_S_eigen, m), color = "Shrinkage Covariance")) +
+  # add geom_line for each
+  geom_line(aes(x = 1:m, y = head(W_eigen, m), color = "True Covariance")) +
+  geom_line(aes(x = 1:m, y = head(W_sample_eigen, m), color = "Sample Covariance")) +
+  geom_line(aes(x = 1:m, y = head(W_S_eigen, m), color = "Shrinkage Covariance")) +
+  ylim(c(-0.1, 13))
+}
 
